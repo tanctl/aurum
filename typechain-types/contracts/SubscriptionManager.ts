@@ -66,6 +66,7 @@ export interface SubscriptionManagerInterface extends Interface {
       | "PYUSD_ADDRESS"
       | "SUBSCRIPTION_INTENT_TYPEHASH"
       | "createSubscription"
+      | "executeSubscription"
       | "executedPayments"
       | "subscriptions"
       | "verifyIntent"
@@ -98,6 +99,10 @@ export interface SubscriptionManagerInterface extends Interface {
     values: [SubscriptionManager.SubscriptionIntentStruct, BytesLike]
   ): string;
   encodeFunctionData(
+    functionFragment: "executeSubscription",
+    values: [BytesLike, AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "executedPayments",
     values: [BytesLike]
   ): string;
@@ -127,6 +132,10 @@ export interface SubscriptionManagerInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "executeSubscription",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "executedPayments",
     data: BytesLike
   ): Result;
@@ -145,22 +154,28 @@ export namespace PaymentExecutedEvent {
     subscriptionId: BytesLike,
     subscriber: AddressLike,
     merchant: AddressLike,
+    paymentNumber: BigNumberish,
     amount: BigNumberish,
-    paymentNumber: BigNumberish
+    fee: BigNumberish,
+    relayer: AddressLike
   ];
   export type OutputTuple = [
     subscriptionId: string,
     subscriber: string,
     merchant: string,
+    paymentNumber: bigint,
     amount: bigint,
-    paymentNumber: bigint
+    fee: bigint,
+    relayer: string
   ];
   export interface OutputObject {
     subscriptionId: string;
     subscriber: string;
     merchant: string;
-    amount: bigint;
     paymentNumber: bigint;
+    amount: bigint;
+    fee: bigint;
+    relayer: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -339,6 +354,12 @@ export interface SubscriptionManager extends BaseContract {
     "nonpayable"
   >;
 
+  executeSubscription: TypedContractMethod<
+    [subscriptionId: BytesLike, relayer: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
   executedPayments: TypedContractMethod<[arg0: BytesLike], [bigint], "view">;
 
   subscriptions: TypedContractMethod<
@@ -401,6 +422,13 @@ export interface SubscriptionManager extends BaseContract {
       signature: BytesLike
     ],
     [string],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "executeSubscription"
+  ): TypedContractMethod<
+    [subscriptionId: BytesLike, relayer: AddressLike],
+    [void],
     "nonpayable"
   >;
   getFunction(
@@ -492,7 +520,7 @@ export interface SubscriptionManager extends BaseContract {
   >;
 
   filters: {
-    "PaymentExecuted(bytes32,address,address,uint256,uint256)": TypedContractEvent<
+    "PaymentExecuted(bytes32,address,address,uint256,uint256,uint256,address)": TypedContractEvent<
       PaymentExecutedEvent.InputTuple,
       PaymentExecutedEvent.OutputTuple,
       PaymentExecutedEvent.OutputObject

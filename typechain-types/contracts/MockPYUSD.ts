@@ -29,12 +29,18 @@ export interface MockPYUSDInterface extends Interface {
       | "allowance"
       | "approve"
       | "balanceOf"
+      | "burn"
       | "decimals"
+      | "forceFailOnTransfer"
       | "mint"
       | "name"
+      | "setBalance"
+      | "setForceFailOnTransfer"
+      | "setTransferFailing"
       | "symbol"
       | "totalSupply"
       | "transfer"
+      | "transferFailing"
       | "transferFrom"
   ): FunctionFragment;
 
@@ -52,12 +58,32 @@ export interface MockPYUSDInterface extends Interface {
     functionFragment: "balanceOf",
     values: [AddressLike]
   ): string;
+  encodeFunctionData(
+    functionFragment: "burn",
+    values: [AddressLike, BigNumberish]
+  ): string;
   encodeFunctionData(functionFragment: "decimals", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "forceFailOnTransfer",
+    values: [AddressLike]
+  ): string;
   encodeFunctionData(
     functionFragment: "mint",
     values: [AddressLike, BigNumberish]
   ): string;
   encodeFunctionData(functionFragment: "name", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "setBalance",
+    values: [AddressLike, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setForceFailOnTransfer",
+    values: [AddressLike, boolean]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setTransferFailing",
+    values: [boolean]
+  ): string;
   encodeFunctionData(functionFragment: "symbol", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "totalSupply",
@@ -68,6 +94,10 @@ export interface MockPYUSDInterface extends Interface {
     values: [AddressLike, BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "transferFailing",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "transferFrom",
     values: [AddressLike, AddressLike, BigNumberish]
   ): string;
@@ -75,15 +105,33 @@ export interface MockPYUSDInterface extends Interface {
   decodeFunctionResult(functionFragment: "allowance", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "approve", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "balanceOf", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "burn", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "decimals", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "forceFailOnTransfer",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "mint", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "name", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "setBalance", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "setForceFailOnTransfer",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setTransferFailing",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "symbol", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "totalSupply",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "transfer", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "transferFailing",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "transferFrom",
     data: BytesLike
@@ -183,7 +231,19 @@ export interface MockPYUSD extends BaseContract {
 
   balanceOf: TypedContractMethod<[account: AddressLike], [bigint], "view">;
 
+  burn: TypedContractMethod<
+    [from: AddressLike, amount: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
   decimals: TypedContractMethod<[], [bigint], "view">;
+
+  forceFailOnTransfer: TypedContractMethod<
+    [arg0: AddressLike],
+    [boolean],
+    "view"
+  >;
 
   mint: TypedContractMethod<
     [to: AddressLike, amount: BigNumberish],
@@ -193,18 +253,38 @@ export interface MockPYUSD extends BaseContract {
 
   name: TypedContractMethod<[], [string], "view">;
 
+  setBalance: TypedContractMethod<
+    [account: AddressLike, amount: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  setForceFailOnTransfer: TypedContractMethod<
+    [account: AddressLike, fail: boolean],
+    [void],
+    "nonpayable"
+  >;
+
+  setTransferFailing: TypedContractMethod<
+    [failing: boolean],
+    [void],
+    "nonpayable"
+  >;
+
   symbol: TypedContractMethod<[], [string], "view">;
 
   totalSupply: TypedContractMethod<[], [bigint], "view">;
 
   transfer: TypedContractMethod<
-    [to: AddressLike, value: BigNumberish],
+    [to: AddressLike, amount: BigNumberish],
     [boolean],
     "nonpayable"
   >;
 
+  transferFailing: TypedContractMethod<[], [boolean], "view">;
+
   transferFrom: TypedContractMethod<
-    [from: AddressLike, to: AddressLike, value: BigNumberish],
+    [from: AddressLike, to: AddressLike, amount: BigNumberish],
     [boolean],
     "nonpayable"
   >;
@@ -231,8 +311,18 @@ export interface MockPYUSD extends BaseContract {
     nameOrSignature: "balanceOf"
   ): TypedContractMethod<[account: AddressLike], [bigint], "view">;
   getFunction(
+    nameOrSignature: "burn"
+  ): TypedContractMethod<
+    [from: AddressLike, amount: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
     nameOrSignature: "decimals"
   ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "forceFailOnTransfer"
+  ): TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
   getFunction(
     nameOrSignature: "mint"
   ): TypedContractMethod<
@@ -244,6 +334,23 @@ export interface MockPYUSD extends BaseContract {
     nameOrSignature: "name"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
+    nameOrSignature: "setBalance"
+  ): TypedContractMethod<
+    [account: AddressLike, amount: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "setForceFailOnTransfer"
+  ): TypedContractMethod<
+    [account: AddressLike, fail: boolean],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "setTransferFailing"
+  ): TypedContractMethod<[failing: boolean], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "symbol"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
@@ -252,14 +359,17 @@ export interface MockPYUSD extends BaseContract {
   getFunction(
     nameOrSignature: "transfer"
   ): TypedContractMethod<
-    [to: AddressLike, value: BigNumberish],
+    [to: AddressLike, amount: BigNumberish],
     [boolean],
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "transferFailing"
+  ): TypedContractMethod<[], [boolean], "view">;
+  getFunction(
     nameOrSignature: "transferFrom"
   ): TypedContractMethod<
-    [from: AddressLike, to: AddressLike, value: BigNumberish],
+    [from: AddressLike, to: AddressLike, amount: BigNumberish],
     [boolean],
     "nonpayable"
   >;
