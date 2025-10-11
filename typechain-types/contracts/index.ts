@@ -2,4 +2,5 @@
 /* tslint:disable */
 /* eslint-disable */
 export type { MockPYUSD } from "./MockPYUSD";
+export type { RelayerRegistry } from "./RelayerRegistry";
 export type { SubscriptionManager } from "./SubscriptionManager";

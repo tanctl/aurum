@@ -57,17 +57,66 @@ export declare namespace SubscriptionManager {
     expiry: bigint;
     nonce: bigint;
   };
+
+  export type SubscriptionStruct = {
+    subscriber: AddressLike;
+    merchant: AddressLike;
+    amount: BigNumberish;
+    interval: BigNumberish;
+    startTime: BigNumberish;
+    maxPayments: BigNumberish;
+    maxTotalAmount: BigNumberish;
+    expiry: BigNumberish;
+    nonce: BigNumberish;
+    status: BigNumberish;
+  };
+
+  export type SubscriptionStructOutput = [
+    subscriber: string,
+    merchant: string,
+    amount: bigint,
+    interval: bigint,
+    startTime: bigint,
+    maxPayments: bigint,
+    maxTotalAmount: bigint,
+    expiry: bigint,
+    nonce: bigint,
+    status: bigint
+  ] & {
+    subscriber: string;
+    merchant: string;
+    amount: bigint;
+    interval: bigint;
+    startTime: bigint;
+    maxPayments: bigint;
+    maxTotalAmount: bigint;
+    expiry: bigint;
+    nonce: bigint;
+    status: bigint;
+  };
 }
 
 export interface SubscriptionManagerInterface extends Interface {
   getFunction(
     nameOrSignature:
+      | "PAUSE_REQUEST_TYPEHASH"
       | "PROTOCOL_FEE_BPS"
       | "PYUSD_ADDRESS"
+      | "RELAYER_REGISTRY"
+      | "RESUME_REQUEST_TYPEHASH"
       | "SUBSCRIPTION_INTENT_TYPEHASH"
+      | "cancelSubscription"
       | "createSubscription"
+      | "currentNonce"
       | "executeSubscription"
       | "executedPayments"
+      | "getNextNonce"
+      | "getNextPaymentTime"
+      | "getPaymentCount"
+      | "getSubscription"
+      | "isSubscriptionActive"
+      | "pauseSubscription"
+      | "resumeSubscription"
       | "subscriptions"
       | "verifyIntent"
   ): FunctionFragment;
@@ -83,6 +132,10 @@ export interface SubscriptionManagerInterface extends Interface {
   ): EventFragment;
 
   encodeFunctionData(
+    functionFragment: "PAUSE_REQUEST_TYPEHASH",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "PROTOCOL_FEE_BPS",
     values?: undefined
   ): string;
@@ -91,12 +144,28 @@ export interface SubscriptionManagerInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "RELAYER_REGISTRY",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "RESUME_REQUEST_TYPEHASH",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "SUBSCRIPTION_INTENT_TYPEHASH",
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "cancelSubscription",
+    values: [BytesLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "createSubscription",
     values: [SubscriptionManager.SubscriptionIntentStruct, BytesLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "currentNonce",
+    values: [AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "executeSubscription",
@@ -105,6 +174,34 @@ export interface SubscriptionManagerInterface extends Interface {
   encodeFunctionData(
     functionFragment: "executedPayments",
     values: [BytesLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getNextNonce",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getNextPaymentTime",
+    values: [BytesLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getPaymentCount",
+    values: [BytesLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getSubscription",
+    values: [BytesLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "isSubscriptionActive",
+    values: [BytesLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "pauseSubscription",
+    values: [BytesLike, BytesLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "resumeSubscription",
+    values: [BytesLike, BytesLike]
   ): string;
   encodeFunctionData(
     functionFragment: "subscriptions",
@@ -116,6 +213,10 @@ export interface SubscriptionManagerInterface extends Interface {
   ): string;
 
   decodeFunctionResult(
+    functionFragment: "PAUSE_REQUEST_TYPEHASH",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "PROTOCOL_FEE_BPS",
     data: BytesLike
   ): Result;
@@ -124,11 +225,27 @@ export interface SubscriptionManagerInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "RELAYER_REGISTRY",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "RESUME_REQUEST_TYPEHASH",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "SUBSCRIPTION_INTENT_TYPEHASH",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "cancelSubscription",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "createSubscription",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "currentNonce",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -137,6 +254,34 @@ export interface SubscriptionManagerInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "executedPayments",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "getNextNonce",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "getNextPaymentTime",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "getPaymentCount",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "getSubscription",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "isSubscriptionActive",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "pauseSubscription",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "resumeSubscription",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -339,11 +484,23 @@ export interface SubscriptionManager extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  PAUSE_REQUEST_TYPEHASH: TypedContractMethod<[], [string], "view">;
+
   PROTOCOL_FEE_BPS: TypedContractMethod<[], [bigint], "view">;
 
   PYUSD_ADDRESS: TypedContractMethod<[], [string], "view">;
 
+  RELAYER_REGISTRY: TypedContractMethod<[], [string], "view">;
+
+  RESUME_REQUEST_TYPEHASH: TypedContractMethod<[], [string], "view">;
+
   SUBSCRIPTION_INTENT_TYPEHASH: TypedContractMethod<[], [string], "view">;
+
+  cancelSubscription: TypedContractMethod<
+    [subscriptionId: BytesLike],
+    [void],
+    "nonpayable"
+  >;
 
   createSubscription: TypedContractMethod<
     [
@@ -354,6 +511,8 @@ export interface SubscriptionManager extends BaseContract {
     "nonpayable"
   >;
 
+  currentNonce: TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+
   executeSubscription: TypedContractMethod<
     [subscriptionId: BytesLike, relayer: AddressLike],
     [void],
@@ -361,6 +520,48 @@ export interface SubscriptionManager extends BaseContract {
   >;
 
   executedPayments: TypedContractMethod<[arg0: BytesLike], [bigint], "view">;
+
+  getNextNonce: TypedContractMethod<
+    [_subscriber: AddressLike],
+    [bigint],
+    "view"
+  >;
+
+  getNextPaymentTime: TypedContractMethod<
+    [subscriptionId: BytesLike],
+    [bigint],
+    "view"
+  >;
+
+  getPaymentCount: TypedContractMethod<
+    [subscriptionId: BytesLike],
+    [bigint],
+    "view"
+  >;
+
+  getSubscription: TypedContractMethod<
+    [subscriptionId: BytesLike],
+    [SubscriptionManager.SubscriptionStructOutput],
+    "view"
+  >;
+
+  isSubscriptionActive: TypedContractMethod<
+    [subscriptionId: BytesLike],
+    [boolean],
+    "view"
+  >;
+
+  pauseSubscription: TypedContractMethod<
+    [subscriptionId: BytesLike, signature: BytesLike],
+    [void],
+    "nonpayable"
+  >;
+
+  resumeSubscription: TypedContractMethod<
+    [subscriptionId: BytesLike, signature: BytesLike],
+    [void],
+    "nonpayable"
+  >;
 
   subscriptions: TypedContractMethod<
     [arg0: BytesLike],
@@ -406,14 +607,26 @@ export interface SubscriptionManager extends BaseContract {
   ): T;
 
   getFunction(
+    nameOrSignature: "PAUSE_REQUEST_TYPEHASH"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
     nameOrSignature: "PROTOCOL_FEE_BPS"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "PYUSD_ADDRESS"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
+    nameOrSignature: "RELAYER_REGISTRY"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "RESUME_REQUEST_TYPEHASH"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
     nameOrSignature: "SUBSCRIPTION_INTENT_TYPEHASH"
   ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "cancelSubscription"
+  ): TypedContractMethod<[subscriptionId: BytesLike], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "createSubscription"
   ): TypedContractMethod<
@@ -425,6 +638,9 @@ export interface SubscriptionManager extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "currentNonce"
+  ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+  getFunction(
     nameOrSignature: "executeSubscription"
   ): TypedContractMethod<
     [subscriptionId: BytesLike, relayer: AddressLike],
@@ -434,6 +650,39 @@ export interface SubscriptionManager extends BaseContract {
   getFunction(
     nameOrSignature: "executedPayments"
   ): TypedContractMethod<[arg0: BytesLike], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "getNextNonce"
+  ): TypedContractMethod<[_subscriber: AddressLike], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "getNextPaymentTime"
+  ): TypedContractMethod<[subscriptionId: BytesLike], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "getPaymentCount"
+  ): TypedContractMethod<[subscriptionId: BytesLike], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "getSubscription"
+  ): TypedContractMethod<
+    [subscriptionId: BytesLike],
+    [SubscriptionManager.SubscriptionStructOutput],
+    "view"
+  >;
+  getFunction(
+    nameOrSignature: "isSubscriptionActive"
+  ): TypedContractMethod<[subscriptionId: BytesLike], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "pauseSubscription"
+  ): TypedContractMethod<
+    [subscriptionId: BytesLike, signature: BytesLike],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "resumeSubscription"
+  ): TypedContractMethod<
+    [subscriptionId: BytesLike, signature: BytesLike],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "subscriptions"
   ): TypedContractMethod<

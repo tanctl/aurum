@@ -2,9 +2,13 @@
 pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "./RelayerRegistry.sol";
 
-contract SubscriptionManager {
+contract SubscriptionManager is ReentrancyGuard {
+    using SafeERC20 for IERC20;
     enum SubscriptionStatus {
         ACTIVE,
         PAUSED,
@@ -40,13 +44,22 @@ contract SubscriptionManager {
 
     mapping(bytes32 => Subscription) public subscriptions;
     mapping(bytes32 => uint256) public executedPayments;
+    mapping(address => uint256) public currentNonce;
     
     address public immutable PYUSD_ADDRESS;
-    uint256 public constant PROTOCOL_FEE_BPS = 50;
+    RelayerRegistry public immutable RELAYER_REGISTRY;
+    uint256 public constant PROTOCOL_FEE_BPS = 50; // 0.5% protocol fee
 
     bytes32 private immutable DOMAIN_SEPARATOR;
+    // eip-712 typehashes for signature verification
     bytes32 public constant SUBSCRIPTION_INTENT_TYPEHASH = keccak256(
         "SubscriptionIntent(address subscriber,address merchant,uint256 amount,uint256 interval,uint256 startTime,uint256 maxPayments,uint256 maxTotalAmount,uint256 expiry,uint256 nonce)"
+    );
+    bytes32 public constant PAUSE_REQUEST_TYPEHASH = keccak256(
+        "PauseRequest(bytes32 subscriptionId,uint256 nonce)"
+    );
+    bytes32 public constant RESUME_REQUEST_TYPEHASH = keccak256(
+        "ResumeRequest(bytes32 subscriptionId,uint256 nonce)"
     );
 
     event SubscriptionCreated(
@@ -94,9 +107,14 @@ contract SubscriptionManager {
         string reason
     );
 
-    constructor(address _pyusdAddress) {
-        PYUSD_ADDRESS = _pyusdAddress;
+    constructor(address _pyusdAddress, address _relayerRegistry) {
+        require(_pyusdAddress != address(0), "Invalid PYUSD address");
+        require(_relayerRegistry != address(0), "Invalid relayer registry address");
         
+        PYUSD_ADDRESS = _pyusdAddress;
+        RELAYER_REGISTRY = RelayerRegistry(_relayerRegistry);
+        
+        // eip-712 domain separator for signature verification
         DOMAIN_SEPARATOR = keccak256(
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
@@ -143,35 +161,35 @@ contract SubscriptionManager {
     function _domainSeparatorV4() internal view returns (bytes32) {
         return DOMAIN_SEPARATOR;
     }
+    
+    function getNextNonce(address _subscriber) external view returns (uint256) {
+        return currentNonce[_subscriber];
+    }
 
     function createSubscription(
         SubscriptionIntent calldata intent,
         bytes calldata signature
     ) external returns (bytes32 subscriptionId) {
-        // verify signature
+        require(intent.nonce == currentNonce[intent.subscriber], "Invalid nonce");
+        
         (bool valid, address signer) = verifyIntent(intent, signature);
         require(valid && signer == intent.subscriber, "Invalid signature");
 
-        // validate subscription parameters
         _validateSubscriptionParams(intent);
 
-        // compute subscription id
+        // unique subscription id from intent hash + signature
         subscriptionId = keccak256(abi.encodePacked(
             _hashIntent(intent),
             signature
         ));
 
-        // ensure subscription doesnt alr exist
         require(subscriptions[subscriptionId].subscriber == address(0), "Subscription already exists");
 
-        // check pyusd allowance
         uint256 requiredAllowance = intent.amount * intent.maxPayments;
         require(
             IERC20(PYUSD_ADDRESS).allowance(intent.subscriber, address(this)) >= requiredAllowance,
             "Insufficient PYUSD allowance"
         );
-
-        // create subscription
         subscriptions[subscriptionId] = Subscription({
             subscriber: intent.subscriber,
             merchant: intent.merchant,
@@ -184,6 +202,8 @@ contract SubscriptionManager {
             nonce: intent.nonce,
             status: SubscriptionStatus.ACTIVE
         });
+
+        currentNonce[intent.subscriber]++; // prevent replay attacks
 
         emit SubscriptionCreated(
             subscriptionId,
@@ -202,14 +222,14 @@ contract SubscriptionManager {
     function executeSubscription(
         bytes32 subscriptionId,
         address relayer
-    ) external {
+    ) external nonReentrant {
         Subscription storage subscription = subscriptions[subscriptionId];
         
-        // ensure subscription exists and is active
         require(subscription.subscriber != address(0), "Subscription does not exist");
         require(subscription.status == SubscriptionStatus.ACTIVE, "Subscription not active");
         
-        // check if subscription is expired
+        require(RELAYER_REGISTRY.isRelayerActive(relayer), "Relayer not active");
+        // handle expired subscriptions
         if (block.timestamp > subscription.expiry) {
             subscription.status = SubscriptionStatus.EXPIRED;
             emit PaymentFailed(
@@ -219,66 +239,142 @@ contract SubscriptionManager {
                 subscription.amount,
                 "Subscription expired"
             );
+            
+            RELAYER_REGISTRY.recordExecution(relayer, false, 0);
             return;
         }
         
-        // validate payment is due
         require(_isPaymentDue(subscriptionId), "Payment not due yet");
         
-        // validate can execute payment
-        require(_canExecutePayment(subscriptionId), "Cannot execute payment");
-        
-        // get current payment number
         uint256 currentPaymentNumber = executedPayments[subscriptionId] + 1;
         
-        // calculate protocol fee
         uint256 fee = (subscription.amount * PROTOCOL_FEE_BPS) / 10000;
+        
+        require(_canExecutePayment(subscriptionId, fee), "Cannot execute payment");
         uint256 merchantAmount = subscription.amount - fee;
         
-        // attempt transfers
         IERC20 pyusd = IERC20(PYUSD_ADDRESS);
         
-        try pyusd.transferFrom(subscription.subscriber, subscription.merchant, merchantAmount) {
-            // merchant transfer succeeded, now transfer fee to relayer
-            try pyusd.transferFrom(subscription.subscriber, relayer, fee) {
-                // both transfers succeeded
-                executedPayments[subscriptionId]++;
-                
-                emit PaymentExecuted(
-                    subscriptionId,
-                    subscription.subscriber,
-                    subscription.merchant,
-                    currentPaymentNumber,
-                    subscription.amount,
-                    fee,
-                    relayer
-                );
-                
-                // check if this was last payment
-                if (executedPayments[subscriptionId] >= subscription.maxPayments) {
-                    subscription.status = SubscriptionStatus.COMPLETED;
-                }
-                
-            } catch {
-                // fee transfer failed, emit payment failed event
-                emit PaymentFailed(
-                    subscriptionId,
-                    subscription.subscriber,
-                    subscription.merchant,
-                    subscription.amount,
-                    "Fee transfer failed"
-                );
-            }
-        } catch {
-            // merchant transfer failed
-            emit PaymentFailed(
-                subscriptionId,
-                subscription.subscriber,
-                subscription.merchant,
-                subscription.amount,
-                "Transfer failed"
-            );
+        // security checks before atomic transfers
+        require(pyusd.balanceOf(subscription.subscriber) >= subscription.amount, "Insufficient balance for payment");
+        require(pyusd.allowance(subscription.subscriber, address(this)) >= subscription.amount, "Insufficient allowance for payment");
+        
+        // atomic transfers: merchant gets amount minus fee, relayer gets fee
+        pyusd.safeTransferFrom(subscription.subscriber, subscription.merchant, merchantAmount);
+        pyusd.safeTransferFrom(subscription.subscriber, relayer, fee);
+        
+        executedPayments[subscriptionId]++;
+        
+        emit PaymentExecuted(
+            subscriptionId,
+            subscription.subscriber,
+            subscription.merchant,
+            currentPaymentNumber,
+            subscription.amount,
+            fee,
+            relayer
+        );
+        
+        RELAYER_REGISTRY.recordExecution(relayer, true, fee);
+        // mark as completed if max payments reached
+        if (executedPayments[subscriptionId] >= subscription.maxPayments) {
+            subscription.status = SubscriptionStatus.COMPLETED;
         }
+    }
+
+    function pauseSubscription(
+        bytes32 subscriptionId,
+        bytes calldata signature
+    ) external {
+        Subscription storage subscription = subscriptions[subscriptionId];
+        
+        require(subscription.subscriber != address(0), "Subscription does not exist");
+        require(subscription.status == SubscriptionStatus.ACTIVE, "Subscription not active");
+        
+        bytes32 structHash = keccak256(
+            abi.encode(
+                PAUSE_REQUEST_TYPEHASH,
+                subscriptionId,
+                currentNonce[subscription.subscriber]
+            )
+        );
+        bytes32 digest = keccak256(
+            abi.encodePacked("\x19\x01", _domainSeparatorV4(), structHash)
+        );
+        address signer = ECDSA.recover(digest, signature);
+        require(signer == subscription.subscriber, "Invalid signature");
+        
+        currentNonce[subscription.subscriber]++;
+        
+        subscription.status = SubscriptionStatus.PAUSED;
+        
+        emit SubscriptionPaused(subscriptionId, subscription.subscriber);
+    }
+    
+    function resumeSubscription(
+        bytes32 subscriptionId,
+        bytes calldata signature
+    ) external {
+        Subscription storage subscription = subscriptions[subscriptionId];
+        
+        require(subscription.subscriber != address(0), "Subscription does not exist");
+        require(subscription.status == SubscriptionStatus.PAUSED, "Subscription not paused");
+        
+        bytes32 structHash = keccak256(
+            abi.encode(
+                RESUME_REQUEST_TYPEHASH,
+                subscriptionId,
+                currentNonce[subscription.subscriber]
+            )
+        );
+        bytes32 digest = keccak256(
+            abi.encodePacked("\x19\x01", _domainSeparatorV4(), structHash)
+        );
+        address signer = ECDSA.recover(digest, signature);
+        require(signer == subscription.subscriber, "Invalid signature");
+        
+        currentNonce[subscription.subscriber]++;
+        
+        subscription.status = SubscriptionStatus.ACTIVE;
+        
+        emit SubscriptionResumed(subscriptionId, subscription.subscriber);
+    }
+    
+    function cancelSubscription(bytes32 subscriptionId) external {
+        Subscription storage subscription = subscriptions[subscriptionId];
+        
+        require(subscription.subscriber != address(0), "Subscription does not exist");
+        require(msg.sender == subscription.subscriber, "Only subscriber can cancel");
+        require(
+            subscription.status == SubscriptionStatus.ACTIVE || 
+            subscription.status == SubscriptionStatus.PAUSED,
+            "Subscription cannot be cancelled"
+        );
+        
+        subscription.status = SubscriptionStatus.CANCELLED;
+        
+        emit SubscriptionCancelled(subscriptionId, subscription.subscriber, subscription.merchant);
+    }
+    
+    function getSubscription(bytes32 subscriptionId) external view returns (Subscription memory) {
+        return subscriptions[subscriptionId];
+    }
+    
+    function getPaymentCount(bytes32 subscriptionId) external view returns (uint256) {
+        return executedPayments[subscriptionId];
+    }
+    
+    function getNextPaymentTime(bytes32 subscriptionId) external view returns (uint256) {
+        Subscription storage subscription = subscriptions[subscriptionId];
+        require(subscription.subscriber != address(0), "Subscription does not exist");
+        
+        uint256 paymentsExecuted = executedPayments[subscriptionId];
+        return subscription.startTime + (paymentsExecuted * subscription.interval);
+    }
+    
+    function isSubscriptionActive(bytes32 subscriptionId) external view returns (bool) {
+        Subscription storage subscription = subscriptions[subscriptionId];
+        return subscription.subscriber != address(0) && subscription.status == SubscriptionStatus.ACTIVE;
     }
     
     function _isPaymentDue(bytes32 subscriptionId) internal view returns (bool) {
@@ -289,30 +385,27 @@ contract SubscriptionManager {
         return block.timestamp >= nextPaymentTime;
     }
     
-    function _canExecutePayment(bytes32 subscriptionId) internal view returns (bool) {
+    function _canExecutePayment(bytes32 subscriptionId, uint256) internal view returns (bool) {
         Subscription storage subscription = subscriptions[subscriptionId];
         uint256 paymentsExecuted = executedPayments[subscriptionId];
         
-        // check if we havent exceeded max payments
         if (paymentsExecuted >= subscription.maxPayments) {
             return false;
         }
         
-        // check if total amount wouldnt exceed max total amount
         uint256 totalPaidSoFar = paymentsExecuted * subscription.amount;
         if (totalPaidSoFar + subscription.amount > subscription.maxTotalAmount) {
             return false;
         }
         
         IERC20 pyusd = IERC20(PYUSD_ADDRESS);
+        uint256 totalRequired = subscription.amount;
         
-        // check subscriber has sufficient balance
-        if (pyusd.balanceOf(subscription.subscriber) < subscription.amount) {
+        if (pyusd.balanceOf(subscription.subscriber) < totalRequired) {
             return false;
         }
         
-        // check subscriber has sufficient allowance
-        if (pyusd.allowance(subscription.subscriber, address(this)) < subscription.amount) {
+        if (pyusd.allowance(subscription.subscriber, address(this)) < totalRequired) {
             return false;
         }
         

@@ -2,4 +2,5 @@
 /* tslint:disable */
 /* eslint-disable */
 export { MockPYUSD__factory } from "./MockPYUSD__factory";
+export { RelayerRegistry__factory } from "./RelayerRegistry__factory";
 export { SubscriptionManager__factory } from "./SubscriptionManager__factory";

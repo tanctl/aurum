@@ -10,8 +10,7 @@ contract MockPYUSD is ERC20 {
 
     constructor() ERC20("PayPal USD", "PYUSD") {
         _decimals = 6;
-        // mint 1 million PYUSD to deployer for testing
-        _mint(msg.sender, 1000000 * 10**_decimals);
+        _mint(msg.sender, 1000000 * 10**_decimals); // 1m pyusd for testing
     }
 
     function decimals() public view virtual override returns (uint8) {
@@ -45,7 +44,7 @@ contract MockPYUSD is ERC20 {
 
     function transfer(address to, uint256 amount) public override returns (bool) {
         if (transferFailing || forceFailOnTransfer[msg.sender]) {
-            return false;
+            return false; // simulate transfer failures for testing
         }
         return super.transfer(to, amount);
     }

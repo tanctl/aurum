@@ -2,3 +2,5 @@
 /* tslint:disable */
 /* eslint-disable */
 export * as cryptography from "./cryptography";
+export * as introspection from "./introspection";
+export { ReentrancyGuard__factory } from "./ReentrancyGuard__factory";
