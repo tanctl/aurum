@@ -4,6 +4,7 @@ pub mod queries;
 use anyhow::Result;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tracing::{info, error};
+use crate::database::queries::Queries;
 
 #[derive(Debug, Clone)]
 pub struct Database {
@@ -43,6 +44,10 @@ impl Database {
 
     pub fn pool(&self) -> &PgPool {
         &self.pool
+    }
+
+    pub fn queries(&self) -> Queries {
+        Queries::new(self.pool.clone())
     }
 
     pub async fn run_migrations(&self) -> Result<()> {

@@ -301,4 +301,61 @@ impl BlockchainClient {
         info!("successfully connected to chain {} with id {}", chain, chain_id);
         Ok(())
     }
+
+    // new method to get payment count from contract
+    pub async fn get_payment_count(&self, subscription_id: [u8; 32], chain: &str) -> Result<u64> {
+        info!("fetching payment count for subscription {:?} on chain {}", subscription_id, chain);
+
+        let (_, subscription_manager, _) = self.get_provider_and_contracts(chain)?;
+
+        let payment_count = subscription_manager
+            .executed_payments(subscription_id)
+            .call()
+            .await
+            .map_err(|e| RelayerError::ContractRevert(format!("failed to get payment count: {}", e)))?;
+
+        info!("payment count for subscription {:?}: {}", subscription_id, payment_count);
+        Ok(payment_count.as_u64())
+    }
+
+    // get subscription nonce from contract for validation
+    pub async fn get_subscription_nonce(&self, subscription_id: [u8; 32], chain: &str) -> Result<u64> {
+        info!("fetching nonce for subscription {:?} on chain {}", subscription_id, chain);
+
+        let subscription_data = self.get_subscription(subscription_id, chain).await?
+            .ok_or_else(|| RelayerError::NotFound("subscription not found".to_string()))?;
+
+        Ok(subscription_data.nonce.as_u64())
+    }
+
+    // validate subscription exists and is in expected state
+    pub async fn validate_subscription_state(&self, subscription_id: [u8; 32], chain: &str) -> Result<SubscriptionData> {
+        info!("validating state for subscription {:?} on chain {}", subscription_id, chain);
+
+        let subscription_data = self.get_subscription(subscription_id, chain).await?
+            .ok_or_else(|| RelayerError::NotFound("subscription not found on chain".to_string()))?;
+
+        // validate subscription is active (status = 0)
+        if subscription_data.status != 0 {
+            return Err(RelayerError::Validation(format!("subscription not active, status: {}", subscription_data.status)));
+        }
+
+        // validate not expired
+        let current_timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        
+        if subscription_data.expiry.as_u64() <= current_timestamp {
+            return Err(RelayerError::Validation("subscription expired".to_string()));
+        }
+
+        // validate payments not exceeded
+        if subscription_data.executed_payments >= subscription_data.max_payments {
+            return Err(RelayerError::Validation("subscription max payments reached".to_string()));
+        }
+
+        info!("subscription state validation passed for {:?}", subscription_id);
+        Ok(subscription_data)
+    }
 }

@@ -1,3 +1,5 @@
+#![allow(clippy::single_component_path_imports)]
+
 use relayer::{config::Config, blockchain::BlockchainClient};
 use std::env;
 use tokio;

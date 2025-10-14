@@ -9,6 +9,7 @@ use std::fmt;
 #[derive(Debug)]
 pub enum RelayerError {
     Database(sqlx::Error),
+    DatabaseError(String),
     DatabaseConnection(String),
     DatabaseMigration(String),
     DatabaseConstraint(String),
@@ -29,6 +30,7 @@ impl fmt::Display for RelayerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RelayerError::Database(err) => write!(f, "database error: {}", err),
+            RelayerError::DatabaseError(msg) => write!(f, "database error: {}", msg),
             RelayerError::DatabaseConnection(msg) => write!(f, "database connection error: {}", msg),
             RelayerError::DatabaseMigration(msg) => write!(f, "database migration error: {}", msg),
             RelayerError::DatabaseConstraint(msg) => write!(f, "database constraint error: {}", msg),
@@ -86,6 +88,10 @@ impl IntoResponse for RelayerError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
             RelayerError::Database(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "database error occurred".to_string(),
+            ),
+            RelayerError::DatabaseError(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "database error occurred".to_string(),
             ),

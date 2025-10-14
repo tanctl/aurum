@@ -1,3 +1,5 @@
+#![allow(clippy::single_component_path_imports)]
+
 pub mod config;
 pub mod database;
 pub mod error;

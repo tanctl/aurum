@@ -43,6 +43,21 @@ pub struct Execution {
     pub chain: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionRecord {
+    pub id: i64,
+    pub subscription_id: String,
+    pub transaction_hash: String,
+    pub block_number: i64,
+    pub gas_used: String,
+    pub gas_price: String,
+    pub fee_paid: String,
+    pub payment_amount: String,
+    pub payment_number: i64,
+    pub chain: String,
+    pub executed_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct IntentCache {
     pub id: i64,
@@ -73,14 +88,14 @@ pub enum SubscriptionStatus {
     Completed,
 }
 
-impl ToString for SubscriptionStatus {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for SubscriptionStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SubscriptionStatus::Active => "ACTIVE".to_string(),
-            SubscriptionStatus::Paused => "PAUSED".to_string(),
-            SubscriptionStatus::Cancelled => "CANCELLED".to_string(),
-            SubscriptionStatus::Expired => "EXPIRED".to_string(),
-            SubscriptionStatus::Completed => "COMPLETED".to_string(),
+            SubscriptionStatus::Active => write!(f, "ACTIVE"),
+            SubscriptionStatus::Paused => write!(f, "PAUSED"),
+            SubscriptionStatus::Cancelled => write!(f, "CANCELLED"),
+            SubscriptionStatus::Expired => write!(f, "EXPIRED"),
+            SubscriptionStatus::Completed => write!(f, "COMPLETED"),
         }
     }
 }
@@ -92,12 +107,12 @@ pub enum ExecutionStatus {
     Pending,
 }
 
-impl ToString for ExecutionStatus {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for ExecutionStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExecutionStatus::Success => "SUCCESS".to_string(),
-            ExecutionStatus::Failed => "FAILED".to_string(),
-            ExecutionStatus::Pending => "PENDING".to_string(),
+            ExecutionStatus::Success => write!(f, "SUCCESS"),
+            ExecutionStatus::Failed => write!(f, "FAILED"),
+            ExecutionStatus::Pending => write!(f, "PENDING"),
         }
     }
 }
@@ -109,11 +124,11 @@ pub enum Chain {
     Base,
 }
 
-impl ToString for Chain {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for Chain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Chain::Sepolia => "sepolia".to_string(),
-            Chain::Base => "base".to_string(),
+            Chain::Sepolia => write!(f, "sepolia"),
+            Chain::Base => write!(f, "base"),
         }
     }
 }

@@ -1,7 +1,11 @@
-use super::models::{Subscription, Execution, IntentCache};
+#![allow(clippy::needless_borrows_for_generic_args)]
+
+use super::models::{Subscription, Execution, IntentCache, ExecutionRecord, SubscriptionStatus};
 use crate::error::{RelayerError, Result};
 use sqlx::{PgPool, Row, query, query_as};
 use tracing::{info, warn};
+use chrono::{DateTime, Utc};
+use ethers::types::U256;
 
 pub struct Queries {
     pool: PgPool,
@@ -69,7 +73,27 @@ impl Queries {
         Ok(subscription)
     }
 
-    pub async fn get_due_subscriptions(&self, chain: &str, limit: i64) -> Result<Vec<Subscription>> {
+    pub async fn get_due_subscriptions(&self) -> Result<Vec<Subscription>> {
+        info!("fetching all due subscriptions");
+        
+        let subscriptions = query_as::<_, Subscription>(
+            r#"
+            SELECT * FROM subscriptions 
+            WHERE status = 'ACTIVE' 
+            AND expiry > NOW()
+            AND executed_payments < max_payments
+            AND next_payment_due <= NOW()
+            ORDER BY next_payment_due ASC
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        info!("found {} due subscriptions", subscriptions.len());
+        Ok(subscriptions)
+    }
+
+    pub async fn get_due_subscriptions_for_chain(&self, chain: &str, limit: i64) -> Result<Vec<Subscription>> {
         info!("fetching due subscriptions for chain: {}, limit: {}", chain, limit);
         
         let subscriptions = query_as::<_, Subscription>(
@@ -404,5 +428,248 @@ impl Queries {
         let deleted = result.rows_affected() as i64;
         info!("cleaned up {} expired intents", deleted);
         Ok(deleted)
+    }
+
+    // new method for safe batch processing with limits
+    pub async fn get_due_subscriptions_with_limit(&self, limit: i64, offset: i64) -> Result<Vec<Subscription>> {
+        info!("fetching due subscriptions with limit: {}, offset: {}", limit, offset);
+        
+        let subscriptions = query_as::<_, Subscription>(
+            r#"
+            SELECT * FROM subscriptions 
+            WHERE status = 'ACTIVE' 
+            AND expiry > NOW()
+            AND executed_payments < max_payments
+            AND next_payment_due <= NOW()
+            AND length(id) <= 66  -- DoS protection: limit id length
+            ORDER BY next_payment_due ASC, id ASC  -- deterministic ordering
+            LIMIT $1 OFFSET $2
+            "#
+        )
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+
+        info!("found {} due subscriptions (limit: {}, offset: {})", subscriptions.len(), limit, offset);
+        Ok(subscriptions)
+    }
+
+    // validate subscription id format in database
+    pub async fn validate_subscription_id_format(&self, subscription_id: &str) -> Result<bool> {
+        // validate that subscription id is proper hex format
+        if !subscription_id.starts_with("0x") || subscription_id.len() != 66 {
+            return Ok(false);
+        }
+        
+        // check if all characters after 0x are valid hex
+        let hex_part = &subscription_id[2..];
+        if !hex_part.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Ok(false);
+        }
+        
+        Ok(true)
+    }
+
+    // synchronize subscription state with blockchain
+    pub async fn sync_subscription_with_blockchain(
+        &self,
+        subscription_id: &str,
+        on_chain_payments: i64,
+        on_chain_status: &str,
+        on_chain_nonce: i64
+    ) -> Result<()> {
+        info!("syncing subscription {} with blockchain state", subscription_id);
+        
+        let result = query(
+            r#"
+            UPDATE subscriptions 
+            SET executed_payments = $1,
+                status = $2,
+                nonce = $3,
+                updated_at = NOW()
+            WHERE id = $4
+            "#
+        )
+        .bind(on_chain_payments)
+        .bind(on_chain_status)
+        .bind(on_chain_nonce)
+        .bind(subscription_id)
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            warn!("no subscription found to sync: {}", subscription_id);
+            return Err(RelayerError::NotFound(format!("subscription not found: {}", subscription_id)));
+        }
+
+        info!("successfully synced subscription {} with blockchain", subscription_id);
+        Ok(())
+    }
+
+    pub async fn insert_execution_record(&self, execution_record: &ExecutionRecord) -> Result<()> {
+        info!("inserting execution record for subscription: {}", execution_record.subscription_id);
+        
+        query(
+            r#"
+            INSERT INTO executions (
+                subscription_id, relayer_address, payment_number, amount_paid,
+                protocol_fee, merchant_amount, transaction_hash, block_number,
+                gas_used, gas_price, status, executed_at, chain
+            ) VALUES ($1, '', $2, $3, $4, '', $5, $6, $7, $8, 'SUCCESS', $9, $10)
+            "#
+        )
+        .bind(&execution_record.subscription_id)
+        .bind(&execution_record.payment_number)
+        .bind(&execution_record.payment_amount)
+        .bind(&execution_record.fee_paid)
+        .bind(&execution_record.transaction_hash)
+        .bind(&execution_record.block_number)
+        .bind(&execution_record.gas_used)
+        .bind(&execution_record.gas_price)
+        .bind(&execution_record.executed_at)
+        .bind(&execution_record.chain)
+        .execute(&self.pool)
+        .await?;
+
+        info!("successfully inserted execution record for subscription: {}", execution_record.subscription_id);
+        Ok(())
+    }
+
+    pub async fn update_subscription_after_payment(
+        &self,
+        subscription_id: &str,
+        payments_made: i64,
+        next_payment_time: DateTime<Utc>,
+        failure_count: i64,
+    ) -> Result<()> {
+        info!("updating subscription {} after payment: payments={}, next_payment={}, failures={}", 
+              subscription_id, payments_made, next_payment_time, failure_count);
+        
+        let result = query(
+            r#"
+            UPDATE subscriptions 
+            SET executed_payments = $1,
+                next_payment_due = $2,
+                failure_count = $3,
+                updated_at = NOW()
+            WHERE id = $4
+            "#
+        )
+        .bind(payments_made)
+        .bind(next_payment_time)
+        .bind(failure_count)
+        .bind(subscription_id)
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            warn!("no subscription found to update: {}", subscription_id);
+            return Err(RelayerError::NotFound(format!("subscription not found: {}", subscription_id)));
+        }
+
+        info!("successfully updated subscription {} after payment", subscription_id);
+        Ok(())
+    }
+
+    pub async fn update_subscription_status_enum(&self, subscription_id: &str, status: SubscriptionStatus) -> Result<()> {
+        self.update_subscription_status(subscription_id, &status.to_string()).await
+    }
+
+    // enhanced atomic transaction with better error handling and validation
+    pub async fn record_execution_and_update_subscription(
+        &self,
+        execution_record: &ExecutionRecord,
+        subscription_id: &str,
+        new_payments_made: i64,
+        next_payment_time: DateTime<Utc>,
+        failure_count: i64,
+    ) -> Result<()> {
+        info!("recording execution and updating subscription in transaction for {}", subscription_id);
+        
+        // validate inputs to prevent corruption
+        if execution_record.subscription_id != subscription_id {
+            return Err(RelayerError::Validation("execution record subscription id mismatch".to_string()));
+        }
+        
+        if new_payments_made < 0 || failure_count < 0 {
+            return Err(RelayerError::Validation("negative payment count or failure count".to_string()));
+        }
+        
+        let mut tx = self.pool.begin().await
+            .map_err(|e| RelayerError::DatabaseError(format!("failed to begin transaction: {}", e)))?;
+
+        // check subscription exists and get current state for validation
+        let current_subscription = query_as::<_, Subscription>(
+            "SELECT * FROM subscriptions WHERE id = $1 FOR UPDATE"
+        )
+        .bind(subscription_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| RelayerError::NotFound(format!("subscription not found: {}", subscription_id)))?;
+        
+        // validate payment increment is correct
+        if new_payments_made != current_subscription.executed_payments + 1 {
+            return Err(RelayerError::Validation("invalid payment count increment".to_string()));
+        }
+
+        // insert execution record with comprehensive data
+        query(
+            r#"
+            INSERT INTO executions (
+                subscription_id, relayer_address, payment_number, amount_paid,
+                protocol_fee, merchant_amount, transaction_hash, block_number,
+                gas_used, gas_price, status, executed_at, chain
+            ) VALUES ($1, '', $2, $3, $4, '', $5, $6, $7, $8, 'SUCCESS', $9, $10)
+            "#
+        )
+        .bind(&execution_record.subscription_id)
+        .bind(&execution_record.payment_number)
+        .bind(&execution_record.payment_amount)
+        .bind(&execution_record.fee_paid)
+        .bind(&execution_record.transaction_hash)
+        .bind(&execution_record.block_number)
+        .bind(&execution_record.gas_used)
+        .bind(&execution_record.gas_price)
+        .bind(&execution_record.executed_at)
+        .bind(&execution_record.chain)
+        .execute(&mut *tx)
+        .await?;
+
+        // update subscription with total_paid calculation
+        let new_total_paid: U256 = current_subscription.total_paid.parse::<U256>()
+            .map_err(|_| RelayerError::Validation("invalid current total_paid format".to_string()))?
+            .checked_add(execution_record.payment_amount.parse::<U256>()
+                .map_err(|_| RelayerError::Validation("invalid payment amount format".to_string()))?)
+            .ok_or_else(|| RelayerError::Validation("total_paid calculation overflow".to_string()))?;
+        
+        let result = query(
+            r#"
+            UPDATE subscriptions 
+            SET executed_payments = $1,
+                total_paid = $2,
+                next_payment_due = $3,
+                failure_count = $4,
+                updated_at = NOW()
+            WHERE id = $5
+            "#
+        )
+        .bind(new_payments_made)
+        .bind(new_total_paid.to_string())
+        .bind(next_payment_time)
+        .bind(failure_count)
+        .bind(subscription_id)
+        .execute(&mut *tx)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(RelayerError::NotFound(format!("subscription not found during update: {}", subscription_id)));
+        }
+
+        tx.commit().await
+            .map_err(|e| RelayerError::DatabaseError(format!("failed to commit transaction: {}", e)))?;
+
+        info!("successfully recorded execution and updated subscription for {}", subscription_id);
+        Ok(())
     }
 }
