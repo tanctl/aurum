@@ -25,3 +25,9 @@ anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
+[[example]]
+name = "blockchain_usage"
+path = "examples/blockchain_usage.rs"
+
+[dev-dependencies]
+tokio-test = "0.4"

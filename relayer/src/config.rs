@@ -10,6 +10,8 @@ pub struct Config {
     pub relayer_private_key: String,
     pub subscription_manager_address_sepolia: String,
     pub subscription_manager_address_base: String,
+    pub pyusd_address_sepolia: String,
+    pub pyusd_address_base: String,
     pub server_host: String,
     pub server_port: u16,
     pub execution_interval_seconds: u64,
@@ -36,6 +38,10 @@ impl Config {
                 .context("SUBSCRIPTION_MANAGER_ADDRESS_SEPOLIA environment variable is required")?,
             subscription_manager_address_base: env::var("SUBSCRIPTION_MANAGER_ADDRESS_BASE")
                 .context("SUBSCRIPTION_MANAGER_ADDRESS_BASE environment variable is required")?,
+            pyusd_address_sepolia: env::var("PYUSD_ADDRESS_SEPOLIA")
+                .context("PYUSD_ADDRESS_SEPOLIA environment variable is required")?,
+            pyusd_address_base: env::var("PYUSD_ADDRESS_BASE")
+                .context("PYUSD_ADDRESS_BASE environment variable is required")?,
             server_host: env::var("SERVER_HOST")
                 .unwrap_or_else(|_| "0.0.0.0".to_string()),
             server_port: env::var("SERVER_PORT")
@@ -69,6 +75,8 @@ impl Config {
         let addresses = [
             (&self.subscription_manager_address_sepolia, "SUBSCRIPTION_MANAGER_ADDRESS_SEPOLIA"),
             (&self.subscription_manager_address_base, "SUBSCRIPTION_MANAGER_ADDRESS_BASE"),
+            (&self.pyusd_address_sepolia, "PYUSD_ADDRESS_SEPOLIA"),
+            (&self.pyusd_address_base, "PYUSD_ADDRESS_BASE"),
             (&self.relayer_address, "RELAYER_ADDRESS"),
         ];
 
@@ -128,6 +136,14 @@ impl Config {
         match chain.to_lowercase().as_str() {
             "sepolia" => Ok(&self.ethereum_rpc_url),
             "base" => Ok(&self.base_rpc_url),
+            _ => Err(anyhow::anyhow!("unsupported chain: {}", chain)),
+        }
+    }
+
+    pub fn pyusd_address_for_chain(&self, chain: &str) -> Result<&str> {
+        match chain.to_lowercase().as_str() {
+            "sepolia" => Ok(&self.pyusd_address_sepolia),
+            "base" => Ok(&self.pyusd_address_base),
             _ => Err(anyhow::anyhow!("unsupported chain: {}", chain)),
         }
     }

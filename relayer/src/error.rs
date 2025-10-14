@@ -13,6 +13,11 @@ pub enum RelayerError {
     DatabaseMigration(String),
     DatabaseConstraint(String),
     Ethereum(ethers::providers::ProviderError),
+    TransactionFailed(String),
+    InsufficientGas(String),
+    NonceError(String),
+    ContractRevert(String),
+    RpcConnectionFailed(String),
     Config(anyhow::Error),
     Validation(String),
     NotFound(String),
@@ -28,6 +33,11 @@ impl fmt::Display for RelayerError {
             RelayerError::DatabaseMigration(msg) => write!(f, "database migration error: {}", msg),
             RelayerError::DatabaseConstraint(msg) => write!(f, "database constraint error: {}", msg),
             RelayerError::Ethereum(err) => write!(f, "ethereum error: {}", err),
+            RelayerError::TransactionFailed(msg) => write!(f, "transaction failed: {}", msg),
+            RelayerError::InsufficientGas(msg) => write!(f, "insufficient gas: {}", msg),
+            RelayerError::NonceError(msg) => write!(f, "nonce error: {}", msg),
+            RelayerError::ContractRevert(msg) => write!(f, "contract revert: {}", msg),
+            RelayerError::RpcConnectionFailed(msg) => write!(f, "rpc connection failed: {}", msg),
             RelayerError::Config(err) => write!(f, "config error: {}", err),
             RelayerError::Validation(msg) => write!(f, "validation error: {}", msg),
             RelayerError::NotFound(msg) => write!(f, "not found: {}", msg),
@@ -94,6 +104,26 @@ impl IntoResponse for RelayerError {
             RelayerError::Ethereum(_) => (
                 StatusCode::BAD_GATEWAY,
                 "ethereum rpc error".to_string(),
+            ),
+            RelayerError::TransactionFailed(_) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "transaction execution failed".to_string(),
+            ),
+            RelayerError::InsufficientGas(_) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "insufficient gas for transaction".to_string(),
+            ),
+            RelayerError::NonceError(_) => (
+                StatusCode::CONFLICT,
+                "transaction nonce error".to_string(),
+            ),
+            RelayerError::ContractRevert(_) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "contract execution reverted".to_string(),
+            ),
+            RelayerError::RpcConnectionFailed(_) => (
+                StatusCode::BAD_GATEWAY,
+                "blockchain rpc connection failed".to_string(),
             ),
             RelayerError::Config(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
