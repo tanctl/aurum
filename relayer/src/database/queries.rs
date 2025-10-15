@@ -7,6 +7,7 @@ use tracing::{info, warn};
 use chrono::{DateTime, Utc};
 use ethers::types::U256;
 
+#[derive(Clone)]
 pub struct Queries {
     pool: PgPool,
 }
@@ -71,6 +72,21 @@ impl Queries {
         }
 
         Ok(subscription)
+    }
+
+    /// Check if a nonce has been used by this subscriber
+    /// Returns true if nonce is already used (preventing replay attacks)
+    pub async fn is_nonce_used(&self, subscriber: &str, nonce: i64) -> Result<bool> {
+        info!("checking nonce uniqueness for subscriber: {}, nonce: {}", subscriber, nonce);
+        
+        let result = query("SELECT COUNT(*) as count FROM subscriptions WHERE subscriber = $1 AND nonce = $2")
+            .bind(subscriber)
+            .bind(nonce)
+            .fetch_one(&self.pool)
+            .await?;
+        
+        let count: i64 = result.get("count");
+        Ok(count > 0)
     }
 
     pub async fn get_due_subscriptions(&self) -> Result<Vec<Subscription>> {

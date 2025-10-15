@@ -8,6 +8,7 @@ use ethers::types::{Address, U256, TransactionReceipt, H256};
 use std::sync::Arc;
 use tracing::{info, warn};
 
+#[derive(Clone)]
 pub struct BlockchainClient {
     sepolia_provider: Arc<SignerMiddleware<Provider<Http>, LocalWallet>>,
     base_provider: Arc<SignerMiddleware<Provider<Http>, LocalWallet>>,

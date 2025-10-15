@@ -1,24 +1,17 @@
 #![allow(clippy::single_component_path_imports)]
 
-pub mod config;
-pub mod database;
-pub mod error;
-
 use anyhow::Result;
-use config::Config;
-use database::Database;
 use std::sync::Arc;
 use tracing::{info, error, Level};
 use tracing_subscriber;
+use tokio::signal;
 
-#[derive(Clone)]
-pub struct AppState {
-    pub config: Config,
-    pub database: Database,
-}
+use relayer::{Config, Database, BlockchainClient, Scheduler, AppState};
+use relayer::api::ApiServer;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // initialize logging
     tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .with_target(false)
@@ -29,6 +22,7 @@ async fn main() -> Result<()> {
 
     info!("starting aurum relayer service");
 
+    // load configuration
     let config = Config::from_env().map_err(|e| {
         error!("failed to load configuration: {}", e);
         e
@@ -38,7 +32,11 @@ async fn main() -> Result<()> {
     info!("server will run on {}:{}", config.server_host, config.server_port);
     info!("execution interval: {} seconds", config.execution_interval_seconds);
     info!("max executions per batch: {}", config.max_executions_per_batch);
+    if let Some(ref envio_url) = config.envio_hyperindex_url {
+        info!("envio hyperindex url: {}", envio_url);
+    }
 
+    // initialize database
     let database = Database::new(&config.database_url).await.map_err(|e| {
         error!("failed to initialize database: {}", e);
         e
@@ -54,74 +52,79 @@ async fn main() -> Result<()> {
         e
     })?;
 
+    // initialize blockchain client
+    let blockchain_client = BlockchainClient::new(&config).await.map_err(|e| {
+        error!("failed to initialize blockchain client: {}", e);
+        e
+    })?;
+
+    // create application state
     let app_state = Arc::new(AppState {
         config: config.clone(),
         database,
+        blockchain_client,
     });
 
     info!("relayer service initialized successfully");
 
-    let app = axum::Router::new()
-        .route("/health", axum::routing::get(health_check))
-        .route("/status", axum::routing::get(status_check))
-        .with_state(app_state.clone());
-
-    let addr = format!("{}:{}", config.server_host, config.server_port);
-    let listener = tokio::net::TcpListener::bind(&addr).await.map_err(|e| {
-        error!("failed to bind to {}: {}", addr, e);
-        anyhow::anyhow!("failed to bind to {}: {}", addr, e)
+    // initialize scheduler
+    let scheduler = Scheduler::new(
+        Arc::new(app_state.database.queries().clone()),
+        Arc::new(app_state.blockchain_client.clone()),
+        app_state.database.pool().clone(),
+    ).await.map_err(|e| {
+        error!("failed to initialize scheduler: {}", e);
+        e
     })?;
 
-    info!("server listening on {}", addr);
-
-    if let Err(e) = axum::serve(listener, app).await {
-        error!("server error: {}", e);
-        return Err(anyhow::anyhow!("server error: {}", e));
-    }
-
-    Ok(())
-}
-
-async fn health_check(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-) -> impl axum::response::IntoResponse {
-    match state.database.ping().await {
-        Ok(_) => {
-            info!("health check passed");
-            axum::Json(serde_json::json!({
-                "status": "healthy",
-                "timestamp": chrono::Utc::now(),
-                "database": "connected"
-            }))
+    // start scheduler in background
+    let scheduler_handle = tokio::spawn(async move {
+        info!("starting payment scheduler");
+        if let Err(e) = scheduler.start().await {
+            error!("scheduler error: {}", e);
         }
-        Err(e) => {
-            error!("health check failed: {}", e);
-            axum::Json(serde_json::json!({
-                "status": "unhealthy",
-                "timestamp": chrono::Utc::now(),
-                "database": "disconnected",
-                "error": e.to_string()
-            }))
-        }
-    }
-}
+    });
 
-async fn status_check(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-) -> impl axum::response::IntoResponse {
-    info!("status check requested");
+    // initialize API server
+    let api_router = ApiServer::create(app_state.clone()).await;
+
+    // start API server in background
+    let api_handle = {
+        let config = config.clone();
+        tokio::spawn(async move {
+            info!("starting REST API server");
+            if let Err(e) = ApiServer::serve(api_router, &config.server_host, config.server_port).await {
+                error!("API server error: {}", e);
+            }
+        })
+    };
+
+    info!("aurum relayer service started successfully");
+    info!("- REST API server: http://{}:{}", config.server_host, config.server_port);
+    info!("- payment scheduler running every {} seconds", config.execution_interval_seconds);
+    info!("- health endpoint: http://{}:{}/health", config.server_host, config.server_port);
     
-    axum::Json(serde_json::json!({
-        "service": "aurum-relayer",
-        "version": env!("CARGO_PKG_VERSION"),
-        "timestamp": chrono::Utc::now(),
-        "config": {
-            "execution_interval_seconds": state.config.execution_interval_seconds,
-            "max_executions_per_batch": state.config.max_executions_per_batch,
-            "max_gas_price_gwei": state.config.max_gas_price_gwei,
-            "relayer_address": state.config.relayer_address,
-            "server_host": state.config.server_host,
-            "server_port": state.config.server_port
+    // wait for shutdown signal
+    tokio::select! {
+        _ = signal::ctrl_c() => {
+            info!("received shutdown signal, stopping services...");
         }
-    }))
+        result = scheduler_handle => {
+            if let Err(e) = result {
+                error!("scheduler task failed: {}", e);
+            }
+        }
+        result = api_handle => {
+            if let Err(e) = result {
+                error!("API server task failed: {}", e);
+            }
+        }
+    }
+
+    // graceful shutdown
+    info!("shutting down services gracefully...");
+    // Note: scheduler handles shutdown when the main task ends
+
+    info!("aurum relayer service stopped successfully");
+    Ok(())
 }

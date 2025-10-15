@@ -10,9 +10,17 @@ pub mod database;
 pub mod error;
 pub mod blockchain;
 pub mod scheduler;
+pub mod api;
 
 pub use config::Config;
 pub use database::Database;
 pub use error::{RelayerError, Result};
 pub use blockchain::BlockchainClient;
 pub use scheduler::Scheduler;
+
+#[derive(Clone)]
+pub struct AppState {
+    pub config: Config,
+    pub database: Database,
+    pub blockchain_client: BlockchainClient,
+}

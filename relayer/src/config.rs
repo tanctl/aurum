@@ -18,6 +18,7 @@ pub struct Config {
     pub max_executions_per_batch: i64,
     pub max_gas_price_gwei: u64,
     pub relayer_address: String,
+    pub envio_hyperindex_url: Option<String>,
 }
 
 impl Config {
@@ -62,6 +63,7 @@ impl Config {
                 .context("MAX_GAS_PRICE_GWEI must be a valid number")?,
             relayer_address: env::var("RELAYER_ADDRESS")
                 .context("RELAYER_ADDRESS environment variable is required")?,
+            envio_hyperindex_url: env::var("ENVIO_HYPERINDEX_URL").ok(),
         };
 
         // validate eth addresses
