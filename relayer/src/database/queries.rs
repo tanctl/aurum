@@ -27,8 +27,8 @@ impl Queries {
                 id, subscriber, merchant, amount, interval_seconds, start_time,
                 max_payments, max_total_amount, expiry, nonce, status,
                 executed_payments, total_paid, next_payment_due, failure_count,
-                created_at, updated_at, chain
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                created_at, updated_at, chain, avail_block_number, avail_extrinsic_index
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
             "#
         )
         .bind(&subscription.id)
@@ -49,6 +49,8 @@ impl Queries {
         .bind(&subscription.created_at)
         .bind(&subscription.updated_at)
         .bind(&subscription.chain)
+        .bind(&subscription.avail_block_number)
+        .bind(&subscription.avail_extrinsic_index)
         .execute(&self.pool)
         .await?;
 
@@ -400,12 +402,17 @@ impl Queries {
             INSERT INTO intent_cache (
                 subscription_intent, signature, subscription_id, subscriber, merchant,
                 amount, interval_seconds, start_time, max_payments, max_total_amount,
-                expiry, nonce, processed, created_at, processed_at, chain
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                expiry, nonce, processed, created_at, processed_at, chain,
+                avail_block_number, avail_extrinsic_index
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+            )
             ON CONFLICT (subscription_id, signature) 
             DO UPDATE SET 
                 subscription_intent = EXCLUDED.subscription_intent,
-                created_at = EXCLUDED.created_at
+                created_at = EXCLUDED.created_at,
+                avail_block_number = EXCLUDED.avail_block_number,
+                avail_extrinsic_index = EXCLUDED.avail_extrinsic_index
             RETURNING id
             "#,
         )
@@ -425,6 +432,8 @@ impl Queries {
         .bind(&intent.created_at)
         .bind(&intent.processed_at)
         .bind(&intent.chain)
+        .bind(&intent.avail_block_number)
+        .bind(&intent.avail_extrinsic_index)
         .fetch_one(&self.pool)
         .await?;
 

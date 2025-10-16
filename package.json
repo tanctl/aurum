@@ -7,7 +7,7 @@
     "compile": "hardhat compile",
     "test": "hardhat test",
     "deploy": "hardhat run scripts/deploy.ts",
-    "deploy:sepolia": "hardhat run deploy/01_deploy_subscription_manager.ts --network sepolia",
+    "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",
     "node": "hardhat node"
   },
   "keywords": [],
@@ -21,6 +21,8 @@
     "chai": "^4.5.0",
     "ethers": "^6.15.0",
     "hardhat": "2.26.3",
+    "hardhat-deploy": "^0.12.2",
+    "hardhat-deploy-ethers": "^0.4.0",
     "mocha": "^11.7.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",

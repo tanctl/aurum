@@ -95,64 +95,78 @@ impl From<anyhow::Error> for RelayerError {
 
 impl IntoResponse for RelayerError {
     fn into_response(self) -> Response {
-        let (status, error_message) = match self {
+        let (status, code, error_message) = match self {
             RelayerError::Database(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
+                "DATABASE_ERROR".to_string(),
                 "database error occurred".to_string(),
             ),
             RelayerError::DatabaseError(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
+                "DATABASE_ERROR".to_string(),
                 "database error occurred".to_string(),
             ),
             RelayerError::DatabaseConnection(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
+                "DATABASE_CONNECTION_ERROR".to_string(),
                 "database connection error".to_string(),
             ),
             RelayerError::DatabaseMigration(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
+                "DATABASE_MIGRATION_ERROR".to_string(),
                 "database migration error".to_string(),
             ),
             RelayerError::DatabaseConstraint(_) => (
                 StatusCode::BAD_REQUEST,
+                "DATABASE_CONSTRAINT".to_string(),
                 "database constraint violation".to_string(),
             ),
-            RelayerError::Ethereum(_) => {
-                (StatusCode::BAD_GATEWAY, "ethereum rpc error".to_string())
-            }
-            RelayerError::TransactionFailed(_) => (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "transaction execution failed".to_string(),
-            ),
-            RelayerError::InsufficientGas(_) => (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "insufficient gas for transaction".to_string(),
-            ),
-            RelayerError::NonceError(_) => {
-                (StatusCode::CONFLICT, "transaction nonce error".to_string())
-            }
-            RelayerError::ContractRevert(_) => (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "contract execution reverted".to_string(),
-            ),
-            RelayerError::RpcConnectionFailed(_) => (
+            RelayerError::Ethereum(_) => (
                 StatusCode::BAD_GATEWAY,
-                "blockchain rpc connection failed".to_string(),
+                "ETHEREUM_ERROR".to_string(),
+                "ethereum rpc error".to_string(),
+            ),
+            RelayerError::TransactionFailed(msg) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "TRANSACTION_FAILED".to_string(),
+                msg,
+            ),
+            RelayerError::InsufficientGas(msg) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "INSUFFICIENT_GAS".to_string(),
+                msg,
+            ),
+            RelayerError::NonceError(msg) => (StatusCode::CONFLICT, "NONCE_ERROR".to_string(), msg),
+            RelayerError::ContractRevert(msg) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "CONTRACT_REVERT".to_string(),
+                msg,
+            ),
+            RelayerError::RpcConnectionFailed(msg) => (
+                StatusCode::BAD_GATEWAY,
+                "RPC_CONNECTION_FAILED".to_string(),
+                msg,
             ),
             RelayerError::Config(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
+                "CONFIG_ERROR".to_string(),
                 "configuration error".to_string(),
             ),
-            RelayerError::Validation(msg) => (StatusCode::BAD_REQUEST, msg),
-            RelayerError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
-            RelayerError::Duplicate(msg) => (StatusCode::CONFLICT, msg),
+            RelayerError::Validation(msg) => {
+                (StatusCode::BAD_REQUEST, "VALIDATION_ERROR".to_string(), msg)
+            }
+            RelayerError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND".to_string(), msg),
+            RelayerError::Duplicate(msg) => (StatusCode::CONFLICT, "DUPLICATE".to_string(), msg),
             RelayerError::InternalError(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR".to_string(),
                 "internal server error".to_string(),
             ),
         };
 
         let body = Json(json!({
             "error": error_message,
+            "code": code,
         }));
 
         (status, body).into_response()

@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::str::FromStr;
 
 // request types
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SubmitIntentRequest {
     pub intent: SubscriptionIntent,
     #[serde(deserialize_with = "deserialize_signature")]
@@ -25,7 +25,7 @@ pub struct SubmitIntentRequest {
 /// 3. numbers: big-endian byte representation for hashing
 /// 4. field order: fixed order in hash calculation (subscriber, merchant, amount, ...)
 /// 5. encoding: all string fields as utf-8 bytes
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SubscriptionIntent {
     #[serde(deserialize_with = "deserialize_address")]
     pub subscriber: String,
@@ -50,7 +50,7 @@ pub struct SubscriptionIntent {
 }
 
 // response types
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SubmitIntentResponse {
     #[serde(rename = "subscriptionId")]
     pub subscription_id: String,
@@ -61,7 +61,7 @@ pub struct SubmitIntentResponse {
     pub status: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SubscriptionResponse {
     pub id: String,
     pub subscriber: String,
@@ -97,6 +97,10 @@ pub struct SubscriptionResponse {
     pub on_chain_payments: u64,
     #[serde(rename = "contractAddress")]
     pub contract_address: String,
+    #[serde(rename = "availBlock")]
+    pub avail_block: Option<u64>,
+    #[serde(rename = "availExtrinsic")]
+    pub avail_extrinsic: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]

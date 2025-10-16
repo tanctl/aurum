@@ -19,6 +19,10 @@ pub struct Config {
     pub max_gas_price_gwei: u64,
     pub relayer_address: String,
     pub envio_hyperindex_url: Option<String>,
+    pub avail_rpc_url: Option<String>,
+    pub avail_application_id: Option<u32>,
+    pub avail_auth_token: Option<String>,
+    pub avail_secret_uri: Option<String>,
 }
 
 impl Config {
@@ -63,6 +67,19 @@ impl Config {
             relayer_address: env::var("RELAYER_ADDRESS")
                 .context("RELAYER_ADDRESS environment variable is required")?,
             envio_hyperindex_url: env::var("ENVIO_HYPERINDEX_URL").ok(),
+            avail_rpc_url: env::var("AVAIL_RPC_URL").ok(),
+            avail_application_id: env::var("AVAIL_APPLICATION_ID")
+                .ok()
+                .map(|value| {
+                    value.parse::<u32>().map_err(|_| {
+                        anyhow::anyhow!(
+                            "AVAIL_APPLICATION_ID must be a valid unsigned 32-bit integer"
+                        )
+                    })
+                })
+                .transpose()?,
+            avail_auth_token: env::var("AVAIL_AUTH_TOKEN").ok(),
+            avail_secret_uri: env::var("AVAIL_SECRET_URI").ok(),
         };
 
         // validate eth addresses
@@ -126,6 +143,37 @@ impl Config {
             ));
         }
 
+        if let Some(url) = &self.avail_rpc_url {
+            if !url.starts_with("http") && url.to_lowercase() != "stub" {
+                return Err(anyhow::anyhow!(
+                    "AVAIL_RPC_URL must be a valid http(s) url or the literal 'stub'"
+                ));
+            }
+        }
+
+        let avail_rpc_specified = self
+            .avail_rpc_url
+            .as_ref()
+            .map(|url| url.to_lowercase() != "stub" && !url.trim().is_empty())
+            .unwrap_or(false);
+
+        if avail_rpc_specified && self.avail_application_id.is_none() {
+            return Err(anyhow::anyhow!(
+                "AVAIL_APPLICATION_ID is required when AVAIL_RPC_URL is set"
+            ));
+        }
+        if avail_rpc_specified
+            && self
+                .avail_secret_uri
+                .as_ref()
+                .map(|v| v.trim().is_empty())
+                .unwrap_or(true)
+        {
+            return Err(anyhow::anyhow!(
+                "AVAIL_SECRET_URI is required when AVAIL_RPC_URL is set"
+            ));
+        }
+
         Ok(())
     }
 
@@ -151,5 +199,18 @@ impl Config {
             "base" => Ok(&self.pyusd_address_base),
             _ => Err(anyhow::anyhow!("unsupported chain: {}", chain)),
         }
+    }
+
+    pub fn avail_enabled(&self) -> bool {
+        self.avail_rpc_url
+            .as_ref()
+            .map(|url| url.to_lowercase() != "stub" && !url.trim().is_empty())
+            .unwrap_or(false)
+            && self.avail_application_id.is_some()
+            && self
+                .avail_secret_uri
+                .as_ref()
+                .map(|uri| !uri.trim().is_empty())
+                .unwrap_or(false)
     }
 }

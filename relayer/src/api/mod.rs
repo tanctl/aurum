@@ -5,16 +5,17 @@ pub mod types;
 pub mod validation;
 
 use axum::{
+    body::Body,
+    http::{header, HeaderValue, Method, Request, StatusCode},
     middleware,
     response::Response,
-    routing::{get, post},
     Router,
 };
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::info;
 
 use crate::{AppState, RelayerError};
-use handlers::*;
 
 pub struct ApiServer;
 
@@ -22,21 +23,8 @@ impl ApiServer {
     pub async fn create(app_state: Arc<AppState>) -> Router {
         info!("initializing REST API server");
 
-        let api_router = Router::new()
-            .route("/api/v1/intent", post(submit_intent_handler))
-            .route("/api/v1/subscription/:id", get(get_subscription_handler))
-            .route(
-                "/api/v1/merchant/:address/transactions",
-                get(get_merchant_transactions_handler),
-            )
-            .route(
-                "/api/v1/merchant/:address/stats",
-                get(get_merchant_stats_handler),
-            )
-            .route("/health", get(health_check_handler))
-            .route("/status", get(health_check_handler)) // alias for health
-            .with_state(app_state)
-            .layer(middleware::from_fn(request_logging_middleware));
+        let api_router = routes::create_api_routes(app_state)
+            .layer(middleware::from_fn(logging_and_cors_middleware));
 
         info!("REST API server initialized successfully");
         api_router
@@ -52,36 +40,61 @@ impl ApiServer {
 
         info!("API server listening on {}", addr);
 
-        axum::serve(listener, router)
-            .await
-            .map_err(|e| RelayerError::InternalError(format!("API server error: {}", e)))?;
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .map_err(|e| RelayerError::InternalError(format!("API server error: {}", e)))?;
 
         Ok(())
     }
 }
 
-// request logging middleware
-async fn request_logging_middleware(
-    req: axum::extract::Request,
-    next: axum::middleware::Next,
-) -> Response {
-    let method = req.method().clone();
-    let uri = req.uri().clone();
-    let start_time = std::time::Instant::now();
-
-    let response = next.run(req).await;
-    let status = response.status();
-    let duration = start_time.elapsed();
-
-    info!(
-        "API request: {} {} - {} ({:?})",
-        method,
-        uri,
-        status.as_u16(),
-        duration
+fn apply_cors_headers(response: &mut Response) {
+    let headers = response.headers_mut();
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
     );
-
-    response
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET,POST,OPTIONS"),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("*"),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_MAX_AGE,
+        HeaderValue::from_static("600"),
+    );
 }
 
-// api-specific error handling is handled by the existing implementation in error.rs
+async fn logging_and_cors_middleware(req: Request<Body>, next: middleware::Next) -> Response {
+    if req.method() == Method::OPTIONS {
+        let mut response = Response::builder()
+            .status(StatusCode::NO_CONTENT)
+            .body(Body::empty())
+            .unwrap();
+        apply_cors_headers(&mut response);
+        response
+    } else {
+        let method = req.method().clone();
+        let uri = req.uri().clone();
+        let start = std::time::Instant::now();
+
+        let mut response = next.run(req).await;
+        apply_cors_headers(&mut response);
+
+        info!(
+            method = %method,
+            uri = %uri,
+            status = response.status().as_u16(),
+            latency_ms = start.elapsed().as_millis(),
+            "api request"
+        );
+
+        response
+    }
+}

@@ -3,7 +3,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use relayer::api::types::*;
-use relayer::{AppState, BlockchainClient, Config, Database};
+use relayer::{AppState, AvailClient, BlockchainClient, Config, Database};
 use std::sync::Arc;
 use tower::util::ServiceExt;
 
@@ -29,6 +29,10 @@ async fn create_test_app_state() -> Arc<AppState> {
         max_gas_price_gwei: 100,
         relayer_address: "0x1234567890123456789012345678901234567890".to_string(),
         envio_hyperindex_url: Some("https://test.envio.dev/v1/graphql".to_string()),
+        avail_rpc_url: Some("stub".to_string()),
+        avail_application_id: None,
+        avail_auth_token: None,
+        avail_secret_uri: None,
     };
 
     let database = Database::new(&config.database_url)
@@ -45,10 +49,15 @@ async fn create_test_app_state() -> Arc<AppState> {
         .await
         .expect("failed to create test blockchain client");
 
+    let avail_client = AvailClient::new(&config)
+        .await
+        .expect("failed to create avail client");
+
     Arc::new(AppState {
         config,
         database,
         blockchain_client,
+        avail_client,
     })
 }
 

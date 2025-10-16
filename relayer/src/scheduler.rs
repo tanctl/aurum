@@ -1,9 +1,11 @@
+use crate::avail::{AvailClient, AvailClientMode};
 use crate::blockchain::BlockchainClient;
-use crate::database::models::{ExecutionRecord, Subscription, SubscriptionStatus};
+use crate::database::models::{ExecutionRecord, IntentCache, Subscription, SubscriptionStatus};
 use crate::database::queries::Queries;
 use crate::error::{RelayerError, Result};
 use chrono::Utc;
 use ethers::types::{H256, U256};
+use serde_json::to_value;
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
 use std::time::Duration;
@@ -77,6 +79,7 @@ const PROTOCOL_FEE_BPS: u32 = 50; // 0.5% protocol fee
 pub struct Scheduler {
     queries: Arc<Queries>,
     blockchain_client: Arc<BlockchainClient>,
+    avail_client: Arc<AvailClient>,
     job_scheduler: JobScheduler,
     pool: PgPool, // for distributed locking
 }
@@ -85,6 +88,7 @@ impl Scheduler {
     pub async fn new(
         queries: Arc<Queries>,
         blockchain_client: Arc<BlockchainClient>,
+        avail_client: Arc<AvailClient>,
         pool: PgPool,
     ) -> Result<Self> {
         info!("initializing payment scheduler");
@@ -96,6 +100,7 @@ impl Scheduler {
         let mut scheduler = Self {
             queries,
             blockchain_client,
+            avail_client,
             job_scheduler,
             pool,
         };
@@ -109,12 +114,14 @@ impl Scheduler {
     async fn setup_payment_job(&mut self) -> Result<()> {
         let queries = Arc::clone(&self.queries);
         let blockchain_client = Arc::clone(&self.blockchain_client);
+        let avail_client = Arc::clone(&self.avail_client);
         let pool = self.pool.clone();
 
         // use safer cron expression: every 60 seconds with proper timing
         let job = Job::new_async("0 */1 * * * *", move |_uuid, _l| {
             let queries = Arc::clone(&queries);
             let blockchain_client = Arc::clone(&blockchain_client);
+            let avail_client = Arc::clone(&avail_client);
             let pool = pool.clone();
 
             Box::pin(async move {
@@ -129,7 +136,12 @@ impl Scheduler {
                             // set processing timeout
                             let processing_result = tokio::time::timeout(
                                 Duration::from_secs(MAX_PROCESSING_TIME_SECONDS),
-                                process_payments_job_safe(queries, blockchain_client, pool.clone()),
+                                process_payments_job_safe(
+                                    queries,
+                                    blockchain_client,
+                                    avail_client,
+                                    pool.clone(),
+                                ),
                             )
                             .await;
 
@@ -208,6 +220,9 @@ impl Scheduler {
             "processing subscription {} for subscriber {}",
             subscription.id, subscription.subscriber
         );
+
+        ensure_intent_cached_job_safe(subscription, &self.queries, self.avail_client.as_ref())
+            .await?;
 
         let validation_result = self.validate_payment(subscription).await?;
 
@@ -695,6 +710,7 @@ async fn release_processing_lock(pool: &PgPool) -> Result<()> {
 async fn process_payments_job_safe(
     queries: Arc<Queries>,
     blockchain_client: Arc<BlockchainClient>,
+    avail_client: Arc<AvailClient>,
     pool: PgPool,
 ) -> Result<()> {
     info!("starting safe payment processing with resource limits");
@@ -734,6 +750,7 @@ async fn process_payments_job_safe(
                 &subscription,
                 &queries,
                 &blockchain_client,
+                &avail_client,
                 &pool,
             )
             .await
@@ -774,6 +791,7 @@ async fn process_single_subscription_job_safe(
     subscription: &Subscription,
     queries: &Arc<Queries>,
     blockchain_client: &Arc<BlockchainClient>,
+    avail_client: &Arc<AvailClient>,
     pool: &PgPool,
 ) -> Result<bool> {
     info!(
@@ -809,6 +827,8 @@ async fn process_single_subscription_job_safe(
         }
         Err(e) => return Err(RelayerError::Database(e)),
     }
+
+    ensure_intent_cached_job_safe(subscription, queries, avail_client.as_ref()).await?;
 
     let validation_result = validate_payment_job_safe(subscription, blockchain_client).await?;
 
@@ -1140,6 +1160,97 @@ async fn record_successful_execution_job_safe(
     Ok(())
 }
 
+async fn ensure_intent_cached_job_safe(
+    subscription: &Subscription,
+    queries: &Arc<Queries>,
+    avail_client: &AvailClient,
+) -> Result<()> {
+    if matches!(avail_client.mode(), AvailClientMode::Stub) {
+        return Ok(());
+    }
+
+    if queries.get_cached_intent(&subscription.id).await?.is_some() {
+        return Ok(());
+    }
+
+    let block_number = match subscription.avail_block_number {
+        Some(value) => value as u64,
+        None => return Ok(()),
+    };
+
+    let extrinsic_index = match subscription.avail_extrinsic_index {
+        Some(value) => value as u64,
+        None => return Ok(()),
+    };
+
+    info!(
+        "intent cache miss for subscription {}, retrieving from avail",
+        subscription.id
+    );
+
+    match avail_client
+        .fetch_intent_if_available(block_number, extrinsic_index)
+        .await?
+    {
+        Some(avail_intent) => {
+            let subscription_intent_value = to_value(&avail_intent.intent).map_err(|e| {
+                RelayerError::InternalError(format!(
+                    "failed to serialize intent for caching: {}",
+                    e
+                ))
+            })?;
+
+            let start_time =
+                chrono::DateTime::from_timestamp(avail_intent.intent.start_time as i64, 0)
+                    .ok_or_else(|| {
+                        RelayerError::Validation("invalid start time in avail intent".to_string())
+                    })?;
+
+            let expiry_time =
+                chrono::DateTime::from_timestamp(avail_intent.intent.expiry as i64, 0).ok_or_else(
+                    || RelayerError::Validation("invalid expiry time in avail intent".to_string()),
+                )?;
+
+            let intent_cache = IntentCache {
+                id: 0,
+                subscription_intent: subscription_intent_value,
+                signature: avail_intent.signature.clone(),
+                subscription_id: subscription.id.clone(),
+                subscriber: avail_intent.intent.subscriber.clone(),
+                merchant: avail_intent.intent.merchant.clone(),
+                amount: avail_intent.intent.amount.clone(),
+                interval_seconds: avail_intent.intent.interval as i64,
+                start_time,
+                max_payments: avail_intent.intent.max_payments as i64,
+                max_total_amount: avail_intent.intent.max_total_amount.clone(),
+                expiry: expiry_time,
+                nonce: avail_intent.intent.nonce as i64,
+                processed: false,
+                created_at: Utc::now(),
+                processed_at: None,
+                chain: subscription.chain.clone(),
+                avail_block_number: Some(block_number as i64),
+                avail_extrinsic_index: Some(extrinsic_index as i64),
+            };
+
+            queries.cache_intent(&intent_cache).await?;
+
+            info!(
+                "successfully cached intent from avail for subscription {}",
+                subscription.id
+            );
+        }
+        None => {
+            warn!(
+                "avail intent not yet available for subscription {} (block {}, extrinsic {})",
+                subscription.id, block_number, extrinsic_index
+            );
+        }
+    }
+
+    Ok(())
+}
+
 async fn handle_subscription_failure_job_safe(
     subscription: &Subscription,
     error: &RelayerError,
@@ -1202,6 +1313,8 @@ mod tests {
             chain: "sepolia".to_string(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            avail_block_number: Some(1),
+            avail_extrinsic_index: Some(0),
         }
     }
 

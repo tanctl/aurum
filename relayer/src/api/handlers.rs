@@ -12,7 +12,6 @@ use tracing::{debug, info};
 use super::envio::EnvioClient;
 use super::types::*;
 use super::validation::ValidationService;
-use crate::blockchain::BlockchainClient;
 use crate::database::models::{IntentCache, Subscription};
 use crate::{AppState, RelayerError, Result};
 
@@ -84,6 +83,21 @@ pub async fn submit_intent_handler(
         ));
     }
 
+    let avail_submission = app_state
+        .avail_client
+        .submit_intent(
+            &request.intent,
+            &request.signature,
+            &app_state.config.relayer_address,
+            chain_id,
+        )
+        .await?;
+
+    info!(
+        "intent submitted to avail - block: {}, extrinsic: {}",
+        avail_submission.block_number, avail_submission.extrinsic_index
+    );
+
     let intent_cache = IntentCache {
         id: 0,
         subscription_intent: serde_json::to_value(&request.intent).map_err(|e| {
@@ -106,6 +120,8 @@ pub async fn submit_intent_handler(
         created_at: Utc::now(),
         processed_at: None,
         chain: chain.to_string(),
+        avail_block_number: Some(avail_submission.block_number as i64),
+        avail_extrinsic_index: Some(avail_submission.extrinsic_index as i64),
     };
 
     let intent_id = app_state
@@ -114,14 +130,6 @@ pub async fn submit_intent_handler(
         .cache_intent(&intent_cache)
         .await?;
     info!("cached intent with ID: {}", intent_id);
-
-    let avail_block = 0u64;
-    let avail_extrinsic = 0u64;
-
-    info!(
-        "stubbed Avail DA submission - block: {}, extrinsic: {}",
-        avail_block, avail_extrinsic
-    );
 
     let subscription = Subscription {
         id: subscription_id.clone(),
@@ -145,6 +153,8 @@ pub async fn submit_intent_handler(
         chain: chain.to_string(),
         created_at: Utc::now(),
         updated_at: Utc::now(),
+        avail_block_number: Some(avail_submission.block_number as i64),
+        avail_extrinsic_index: Some(avail_submission.extrinsic_index as i64),
     };
 
     app_state
@@ -157,8 +167,8 @@ pub async fn submit_intent_handler(
 
     let response = SubmitIntentResponse {
         subscription_id,
-        avail_block,
-        avail_extrinsic,
+        avail_block: avail_submission.block_number,
+        avail_extrinsic: avail_submission.extrinsic_index,
         status: "ACTIVE".to_string(),
     };
 
@@ -181,7 +191,7 @@ pub async fn get_subscription_handler(
         .await?
         .ok_or_else(|| RelayerError::NotFound("subscription not found".to_string()))?;
 
-    let blockchain_client = BlockchainClient::new(&app_state.config).await?;
+    let blockchain_client = app_state.blockchain_client.clone();
 
     let subscription_id_bytes = hex::decode(&subscription_id[2..])
         .map_err(|_| RelayerError::Validation("invalid subscription ID format".to_string()))?
@@ -192,21 +202,22 @@ pub async fn get_subscription_handler(
         .get_subscription(subscription_id_bytes, &subscription.chain)
         .await?;
 
-    let (on_chain_status, on_chain_payments, contract_address) = if let Some(data) = on_chain_data {
-        (
-            data.status,
-            data.executed_payments.as_u64(),
-            format!("0x{:x}", data.subscriber),
-        )
+    let (on_chain_status, on_chain_payments) = if let Some(data) = on_chain_data {
+        (data.status, data.executed_payments.as_u64())
     } else {
-        (255u8, 0u64, "not found".to_string()) // 255 = not found
+        (255u8, 0u64)
     };
 
+    let contract_address = app_state
+        .config
+        .subscription_manager_address_for_chain(&subscription.chain)
+        .map_err(|e| RelayerError::Validation(e.to_string()))?
+        .to_string();
+
     let next_payment_timestamp = if subscription.executed_payments < subscription.max_payments {
-        subscription.start_time.timestamp() as u64
-            + ((subscription.executed_payments as u64) * (subscription.interval_seconds as u64))
+        subscription.next_payment_due.timestamp().max(0) as u64
     } else {
-        0 // no more payments
+        0
     };
 
     let response = SubscriptionResponse {
@@ -231,6 +242,8 @@ pub async fn get_subscription_handler(
         on_chain_status,
         on_chain_payments,
         contract_address,
+        avail_block: subscription.avail_block_number.map(|v| v as u64),
+        avail_extrinsic: subscription.avail_extrinsic_index.map(|v| v as u64),
     };
 
     info!("successfully retrieved subscription: {}", subscription_id);
@@ -340,22 +353,16 @@ pub async fn health_check_handler(
     };
 
     let rpc_start = std::time::Instant::now();
-    let rpc_health = match BlockchainClient::new(&app_state.config).await {
-        Ok(client) => match client.validate_connection("sepolia").await {
-            Ok(_) => {
-                let response_time = rpc_start.elapsed().as_millis() as u64;
-                ServiceStatus {
-                    healthy: true,
-                    response_time_ms: Some(response_time),
-                    error: None,
-                }
+    let blockchain_client = app_state.blockchain_client.clone();
+    let rpc_health = match blockchain_client.validate_connection("sepolia").await {
+        Ok(_) => {
+            let response_time = rpc_start.elapsed().as_millis() as u64;
+            ServiceStatus {
+                healthy: true,
+                response_time_ms: Some(response_time),
+                error: None,
             }
-            Err(e) => ServiceStatus {
-                healthy: false,
-                response_time_ms: None,
-                error: Some(e.to_string()),
-            },
-        },
+        }
         Err(e) => ServiceStatus {
             healthy: false,
             response_time_ms: None,

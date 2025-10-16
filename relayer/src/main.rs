@@ -7,7 +7,7 @@ use tracing::{error, info, Level};
 use tracing_subscriber;
 
 use relayer::api::ApiServer;
-use relayer::{AppState, BlockchainClient, Config, Database, Scheduler};
+use relayer::{AppState, AvailClient, BlockchainClient, Config, Database, Scheduler};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -44,6 +44,9 @@ async fn main() -> Result<()> {
     if let Some(ref envio_url) = config.envio_hyperindex_url {
         info!("envio hyperindex url: {}", envio_url);
     }
+    if let Some(ref avail_url) = config.avail_rpc_url {
+        info!("avail rpc url: {}", avail_url);
+    }
 
     // initialize database
     let database = Database::new(&config.database_url).await.map_err(|e| {
@@ -67,11 +70,17 @@ async fn main() -> Result<()> {
         e
     })?;
 
+    let avail_client = AvailClient::new(&config).await.map_err(|e| {
+        error!("failed to initialise avail client: {}", e);
+        e
+    })?;
+
     // create application state
     let app_state = Arc::new(AppState {
         config: config.clone(),
         database,
         blockchain_client,
+        avail_client: avail_client.clone(),
     });
 
     info!("relayer service initialized successfully");
@@ -80,6 +89,7 @@ async fn main() -> Result<()> {
     let scheduler = Scheduler::new(
         Arc::new(app_state.database.queries().clone()),
         Arc::new(app_state.blockchain_client.clone()),
+        Arc::new(avail_client.clone()),
         app_state.database.pool().clone(),
     )
     .await

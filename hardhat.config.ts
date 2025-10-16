@@ -1,5 +1,17 @@
+/// <reference types="node" />
+
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
+
+const hardhatDeployLoaded = (() => {
+  try {
+    require("hardhat-deploy");
+    return true;
+  } catch (error) {
+    console.warn("hardhat-deploy plugin not found, continuing without it");
+    return false;
+  }
+})();
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -12,6 +24,15 @@ const config: HardhatUserConfig = {
       viaIR: true,
     },
   },
+  ...(hardhatDeployLoaded
+    ? {
+        namedAccounts: {
+          deployer: {
+            default: 0,
+          },
+        },
+      }
+    : {}),
   mocha: {
     timeout: 40000,
   },
@@ -23,4 +44,4 @@ const config: HardhatUserConfig = {
   },
 };
 
-module.exports = config;
+export default config;

@@ -35,6 +35,10 @@ fn setup_test_env() {
         "PYUSD_ADDRESS_BASE",
         "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
     );
+    env::set_var("AVAIL_RPC_URL", "stub");
+    env::remove_var("AVAIL_APPLICATION_ID");
+    env::remove_var("AVAIL_AUTH_TOKEN");
+    env::remove_var("AVAIL_SECRET_URI");
 }
 
 #[tokio::test]

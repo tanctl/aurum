@@ -6,12 +6,14 @@
 #![allow(clippy::type_complexity)]
 
 pub mod api;
+pub mod avail;
 pub mod blockchain;
 pub mod config;
 pub mod database;
 pub mod error;
 pub mod scheduler;
 
+pub use avail::{AvailClient, AvailClientMode};
 pub use blockchain::BlockchainClient;
 pub use config::Config;
 pub use database::Database;
@@ -23,4 +25,5 @@ pub struct AppState {
     pub config: Config,
     pub database: Database,
     pub blockchain_client: BlockchainClient,
+    pub avail_client: avail::AvailClient,
 }

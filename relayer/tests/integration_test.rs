@@ -39,6 +39,10 @@ async fn test_config_loading() {
         "PYUSD_ADDRESS_BASE",
         "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
     );
+    env::set_var("AVAIL_RPC_URL", "stub");
+    env::remove_var("AVAIL_APPLICATION_ID");
+    env::remove_var("AVAIL_AUTH_TOKEN");
+    env::remove_var("AVAIL_SECRET_URI");
 
     let config = Config::from_env().expect("should load config from environment");
 
@@ -97,6 +101,10 @@ fn test_config_validation() {
         "PYUSD_ADDRESS_BASE",
         "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
     );
+    env::set_var("AVAIL_RPC_URL", "stub");
+    env::remove_var("AVAIL_APPLICATION_ID");
+    env::remove_var("AVAIL_AUTH_TOKEN");
+    env::remove_var("AVAIL_SECRET_URI");
 
     let result = Config::from_env();
     assert!(result.is_err());

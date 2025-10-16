@@ -178,6 +178,49 @@ describe("SubscriptionManager", function () {
     });
   });
 
+  describe("Intent Verification", function () {
+    it("Should validate a correct intent signature", async function () {
+      const { intent, signature } = await createSubscriptionIntent();
+      const verification = await subscriptionManager.verifyIntent(intent, signature);
+      expect(verification[0]).to.equal(true);
+      expect(verification[1]).to.equal(subscriber.address);
+    });
+
+    it("Should detect an invalid intent signature", async function () {
+      const { intent } = await createSubscriptionIntent();
+
+      const currentNonce = await subscriptionManager.getNextNonce(subscriber.address);
+      const forgedIntent = { ...intent, nonce: currentNonce };
+
+      const domain = {
+        name: "Aurum",
+        version: "1",
+        chainId: (await ethers.provider.getNetwork()).chainId,
+        verifyingContract: await subscriptionManager.getAddress()
+      };
+
+      const types = {
+        SubscriptionIntent: [
+          { name: "subscriber", type: "address" },
+          { name: "merchant", type: "address" },
+          { name: "amount", type: "uint256" },
+          { name: "interval", type: "uint256" },
+          { name: "startTime", type: "uint256" },
+          { name: "maxPayments", type: "uint256" },
+          { name: "maxTotalAmount", type: "uint256" },
+          { name: "expiry", type: "uint256" },
+          { name: "nonce", type: "uint256" }
+        ]
+      };
+
+      const forgedSignature = await merchant.signTypedData(domain, types, forgedIntent);
+      const verification = await subscriptionManager.verifyIntent(forgedIntent, forgedSignature);
+
+      expect(verification[0]).to.equal(false);
+      expect(verification[1]).to.equal(merchant.address);
+    });
+  });
+
   describe("Create Subscription", function () {
     it("Should create subscription with valid parameters", async function () {
       const { intent, signature } = await createSubscriptionIntent();
@@ -526,6 +569,61 @@ describe("SubscriptionManager", function () {
       const receipt = await tx.wait();
       const events = receipt.logs.filter(log => log.topics[0] === subscriptionManager.interface.getEvent("SubscriptionCreated").topicHash);
       subscriptionId = events[0].topics[1];
+    });
+
+    it("Should execute subscription successfully and distribute funds correctly", async function () {
+      await registerActiveRelayer();
+
+      const latestBlock = await ethers.provider.getBlock("latest");
+      const startTime = latestBlock.timestamp;
+      const intervalSeconds = 60;
+
+      const amount = ethers.parseUnits("10", 6);
+      const { intent, signature } = await createSubscriptionIntent({
+        startTime,
+        interval: intervalSeconds,
+        maxPayments: 2,
+        maxTotalAmount: amount * 2n
+      });
+
+      await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
+      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
+
+      const tx = await subscriptionManager.createSubscription(intent, signature);
+      const receipt = await tx.wait();
+      const events = receipt.logs.filter(log => log.topics[0] === subscriptionManager.interface.getEvent("SubscriptionCreated").topicHash);
+      const localSubscriptionId = events[0].topics[1];
+
+      await ethers.provider.send("evm_increaseTime", [Number(intent.interval)]);
+      await ethers.provider.send("evm_mine", []);
+
+      const merchantBalanceBefore = await mockPYUSD.balanceOf(merchant.address);
+      const relayerBalanceBefore = await mockPYUSD.balanceOf(relayer.address);
+
+      const executeTx = await subscriptionManager.connect(relayer).executeSubscription(localSubscriptionId, relayer.address);
+      const executeReceipt = await executeTx.wait();
+
+      const paymentEventTopic = subscriptionManager.interface.getEvent("PaymentExecuted").topicHash;
+      const emittedPaymentEvent = executeReceipt.logs.find(log => log.topics[0] === paymentEventTopic);
+      expect(emittedPaymentEvent).to.not.equal(undefined);
+
+      const fee = (intent.amount * 50n) / 10000n;
+      const merchantAmount = intent.amount - fee;
+
+      const merchantBalanceAfter = await mockPYUSD.balanceOf(merchant.address);
+      const relayerBalanceAfter = await mockPYUSD.balanceOf(relayer.address);
+
+      expect(merchantBalanceAfter - merchantBalanceBefore).to.equal(merchantAmount);
+      expect(relayerBalanceAfter - relayerBalanceBefore).to.equal(fee);
+
+      expect(await subscriptionManager.getPaymentCount(localSubscriptionId)).to.equal(1);
+
+      const relayerInfo = await relayerRegistry.relayers(relayer.address);
+      expect(relayerInfo.successfulExecutions).to.equal(1);
+      expect(relayerInfo.totalFeesEarned).to.equal(fee);
+
+      const updatedSubscription = await subscriptionManager.getSubscription(localSubscriptionId);
+      expect(updatedSubscription.status).to.equal(0); // ACTIVE
     });
 
     it("Should reject payment execution on paused subscription", async function () {

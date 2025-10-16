@@ -1,4 +1,4 @@
-use relayer::{BlockchainClient, Config, Database, Scheduler};
+use relayer::{AvailClient, BlockchainClient, Config, Database, Scheduler};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -14,8 +14,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = database.pool().clone(); // get pool for distributed locking
 
     let blockchain_client = Arc::new(BlockchainClient::new(&config).await?);
+    let avail_client = Arc::new(AvailClient::new(&config).await?);
 
-    let mut scheduler = Scheduler::new(queries, blockchain_client, pool).await?;
+    let mut scheduler = Scheduler::new(queries, blockchain_client, avail_client, pool).await?;
 
     println!("starting payment scheduler...");
     scheduler.start().await?;

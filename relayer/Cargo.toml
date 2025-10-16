@@ -31,6 +31,8 @@ reqwest = { version = "0.11", features = ["json"] }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.4", features = ["cors", "trace", "fs"] }
 uuid = { version = "1.6", features = ["v4", "serde"] }
+http = "0.2"
+avail-rust-client = { version = "0.4.1-rc.1", default-features = false, features = ["native", "reqwest"] }
 
 [[example]]
 name = "blockchain_usage"

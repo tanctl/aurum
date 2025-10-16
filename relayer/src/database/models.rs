@@ -22,6 +22,8 @@ pub struct Subscription {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub chain: String, // "sepolia" or "base"
+    pub avail_block_number: Option<i64>,
+    pub avail_extrinsic_index: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -77,6 +79,8 @@ pub struct IntentCache {
     pub created_at: DateTime<Utc>,
     pub processed_at: Option<DateTime<Utc>>,
     pub chain: String,
+    pub avail_block_number: Option<i64>,
+    pub avail_extrinsic_index: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
