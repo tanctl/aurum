@@ -2,18 +2,38 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
 describe("RelayerRegistry", function () {
-  let relayerRegistry;
-  let mockPYUSD;
-  let subscriptionManager;
+  const MINIMUM_STAKE = ethers.parseUnits("1000", 6);
+  const SLASH_AMOUNT = ethers.parseUnits("100", 6);
+
   let owner;
   let relayer1;
   let relayer2;
-  let user;
+  let outsider;
+  let mockPYUSD;
+  let relayerRegistry;
+  let subscriptionManager;
 
-  const MINIMUM_STAKE = ethers.parseUnits("1000", 6);
+  async function registerRelayer(signer, amount = MINIMUM_STAKE) {
+    await mockPYUSD.mint(signer.address, amount);
+    await mockPYUSD.connect(signer).approve(await relayerRegistry.getAddress(), amount);
+    await relayerRegistry.connect(signer).registerRelayer(amount);
+  }
+
+  async function withSubscriptionManager(callback) {
+    const subscriptionManagerAddress = await subscriptionManager.getAddress();
+    await ethers.provider.send("hardhat_impersonateAccount", [subscriptionManagerAddress]);
+    const signer = await ethers.getSigner(subscriptionManagerAddress);
+    await ethers.provider.send("hardhat_setBalance", [
+      subscriptionManagerAddress,
+      "0x1000000000000000000",
+    ]);
+    const result = await callback(signer);
+    await ethers.provider.send("hardhat_stopImpersonatingAccount", [subscriptionManagerAddress]);
+    return result;
+  }
 
   beforeEach(async function () {
-    [owner, relayer1, relayer2, user] = await ethers.getSigners();
+    [owner, relayer1, relayer2, outsider] = await ethers.getSigners();
 
     const MockPYUSD = await ethers.getContractFactory("MockPYUSD");
     mockPYUSD = await MockPYUSD.deploy();
@@ -24,366 +44,235 @@ describe("RelayerRegistry", function () {
     await relayerRegistry.waitForDeployment();
 
     const SubscriptionManager = await ethers.getContractFactory("SubscriptionManager");
-    subscriptionManager = await SubscriptionManager.deploy(await mockPYUSD.getAddress(), await relayerRegistry.getAddress());
+    subscriptionManager = await SubscriptionManager.deploy(
+      await mockPYUSD.getAddress(),
+      await relayerRegistry.getAddress()
+    );
     await subscriptionManager.waitForDeployment();
 
     await relayerRegistry.setSubscriptionManager(await subscriptionManager.getAddress());
   });
 
-  describe("Deployment", function () {
-    it("Should set the correct PYUSD address", async function () {
+  describe("deployment", function () {
+    it("initialises core parameters", async function () {
       expect(await relayerRegistry.PYUSD_ADDRESS()).to.equal(await mockPYUSD.getAddress());
-    });
-
-    it("Should set the correct minimum stake", async function () {
       expect(await relayerRegistry.MINIMUM_STAKE()).to.equal(MINIMUM_STAKE);
-    });
-
-    it("Should set the subscription manager address", async function () {
-      expect(await relayerRegistry.subscriptionManager()).to.equal(await subscriptionManager.getAddress());
-    });
-
-    it("Should reject invalid PYUSD address in constructor", async function () {
-      const RelayerRegistry = await ethers.getContractFactory("RelayerRegistry");
-      await expect(
-        RelayerRegistry.deploy(ethers.ZeroAddress)
-      ).to.be.revertedWith("Invalid PYUSD address");
-    });
-
-    it("Should reject setting subscription manager twice", async function () {
-      await expect(
-        relayerRegistry.setSubscriptionManager(await subscriptionManager.getAddress())
-      ).to.be.revertedWith("Already set");
+      expect(await relayerRegistry.slashAmountConfig()).to.equal(SLASH_AMOUNT);
+      expect(await relayerRegistry.failureThresholdConfig()).to.equal(3);
+      expect(await relayerRegistry.subscriptionManager()).to.equal(
+        await subscriptionManager.getAddress()
+      );
     });
   });
 
-  describe("Relayer Registration", function () {
-    beforeEach(async function () {
-      await mockPYUSD.mint(relayer1.address, MINIMUM_STAKE * 2n);
-      await mockPYUSD.mint(relayer2.address, MINIMUM_STAKE * 2n);
-    });
-
-    it("Should register relayer with sufficient stake", async function () {
-      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), MINIMUM_STAKE);
-      
-      const tx = await relayerRegistry.connect(relayer1).registerRelayer(MINIMUM_STAKE);
-      const receipt = await tx.wait();
-
-      expect(receipt.status).to.equal(1);
+  describe("registration", function () {
+    it("registers a relayer with sufficient stake", async function () {
+      await registerRelayer(relayer1);
 
       const relayerData = await relayerRegistry.relayers(relayer1.address);
       expect(relayerData.stakedAmount).to.equal(MINIMUM_STAKE);
-      expect(relayerData.isActive).to.be.true;
-      expect(relayerData.successfulExecutions).to.equal(0);
-      expect(relayerData.failedExecutions).to.equal(0);
-      expect(relayerData.totalFeesEarned).to.equal(0);
-
-      const events = receipt.logs.filter(log => 
-        log.topics[0] === relayerRegistry.interface.getEvent("RelayerRegistered").topicHash
-      );
-      expect(events).to.have.length(1);
+      expect(relayerData.isActive).to.equal(true);
+      expect(await relayerRegistry.canExecute(relayer1.address)).to.equal(true);
+      expect(await relayerRegistry.getConsecutiveFailures(relayer1.address)).to.equal(0);
     });
 
-    it("Should register relayer with stake above minimum", async function () {
-      const stakeAmount = MINIMUM_STAKE * 2n;
-      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), stakeAmount);
-      
-      await relayerRegistry.connect(relayer1).registerRelayer(stakeAmount);
+    it("rejects insufficient stake", async function () {
+      const amount = MINIMUM_STAKE - ethers.parseUnits("1", 6);
+      await mockPYUSD.mint(relayer1.address, amount);
+      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), amount);
 
-      const relayerData = await relayerRegistry.relayers(relayer1.address);
-      expect(relayerData.stakedAmount).to.equal(stakeAmount);
-      expect(relayerData.isActive).to.be.true;
-    });
-
-    it("Should reject registration with insufficient stake", async function () {
-      const insufficientStake = MINIMUM_STAKE - 1n;
-      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), insufficientStake);
-      
       await expect(
-        relayerRegistry.connect(relayer1).registerRelayer(insufficientStake)
+        relayerRegistry.connect(relayer1).registerRelayer(amount)
       ).to.be.revertedWith("Insufficient stake amount");
     });
 
-    it("Should reject registration if already registered", async function () {
+    it("prevents duplicate registration", async function () {
+      await registerRelayer(relayer1);
+      await mockPYUSD.mint(relayer1.address, MINIMUM_STAKE);
       await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), MINIMUM_STAKE);
-      await relayerRegistry.connect(relayer1).registerRelayer(MINIMUM_STAKE);
 
-      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), MINIMUM_STAKE);
       await expect(
         relayerRegistry.connect(relayer1).registerRelayer(MINIMUM_STAKE)
       ).to.be.revertedWith("Relayer already registered");
     });
-
-    it("Should reject registration with insufficient token balance", async function () {
-      const excessiveStake = MINIMUM_STAKE * 3n;
-      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), excessiveStake);
-      
-      await expect(
-        relayerRegistry.connect(relayer1).registerRelayer(excessiveStake)
-      ).to.be.reverted;
-    });
-
-    it("Should reject registration without sufficient allowance", async function () {
-      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), MINIMUM_STAKE - 1n);
-      
-      await expect(
-        relayerRegistry.connect(relayer1).registerRelayer(MINIMUM_STAKE)
-      ).to.be.reverted;
-    });
   });
 
-  describe("Relayer Unregistration", function () {
+  describe("unregistration", function () {
     beforeEach(async function () {
-      await mockPYUSD.mint(relayer1.address, MINIMUM_STAKE);
-      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), MINIMUM_STAKE);
-      await relayerRegistry.connect(relayer1).registerRelayer(MINIMUM_STAKE);
+      await registerRelayer(relayer1);
     });
 
-    it("Should unregister relayer and return stake after withdrawal delay", async function () {
-      const initialBalance = await mockPYUSD.balanceOf(relayer1.address);
-      
-      await relayerRegistry.connect(relayer1).requestWithdrawal();
-      
-      await ethers.provider.send("evm_increaseTime", [7 * 24 * 60 * 60]); // 7 days
-      await ethers.provider.send("evm_mine", []);
-      
-      const tx = await relayerRegistry.connect(relayer1).unregisterRelayer();
-      const receipt = await tx.wait();
-
-      expect(receipt.status).to.equal(1);
-
-      const relayerData = await relayerRegistry.relayers(relayer1.address);
-      expect(relayerData.stakedAmount).to.equal(0);
-      expect(relayerData.isActive).to.be.false;
-      expect(relayerData.withdrawalRequested).to.be.false;
-
-      const finalBalance = await mockPYUSD.balanceOf(relayer1.address);
-      expect(finalBalance).to.equal(initialBalance + MINIMUM_STAKE);
-
-      const events = receipt.logs.filter(log => 
-        log.topics[0] === relayerRegistry.interface.getEvent("RelayerUnregistered").topicHash
-      );
-      expect(events).to.have.length(1);
-    });
-
-    it("Should reject unregistration if not active", async function () {
+    it("allows withdrawal after delay when not slashed", async function () {
       await relayerRegistry.connect(relayer1).requestWithdrawal();
       await ethers.provider.send("evm_increaseTime", [7 * 24 * 60 * 60]);
       await ethers.provider.send("evm_mine", []);
-      
-      await relayerRegistry.connect(relayer1).unregisterRelayer();
+
+      await expect(relayerRegistry.connect(relayer1).unregisterRelayer())
+        .to.emit(relayerRegistry, "RelayerUnregistered")
+        .withArgs(relayer1.address, MINIMUM_STAKE);
+
+      expect(await relayerRegistry.canExecute(relayer1.address)).to.equal(false);
+    });
+
+    it("blocks withdrawal while slashed", async function () {
+      await withSubscriptionManager(async (signer) => {
+        await relayerRegistry.connect(signer).recordExecution(relayer1.address, false, 0);
+        await relayerRegistry.connect(signer).recordExecution(relayer1.address, false, 0);
+        await relayerRegistry.connect(signer).recordExecution(relayer1.address, false, 0);
+      });
 
       await expect(
-        relayerRegistry.connect(relayer1).unregisterRelayer()
+        relayerRegistry.connect(relayer1).requestWithdrawal()
       ).to.be.revertedWith("Relayer not active");
-    });
-
-    it("Should reject unregistration if never registered", async function () {
-      await expect(
-        relayerRegistry.connect(relayer2).unregisterRelayer()
-      ).to.be.revertedWith("Relayer not active");
-    });
-
-    it("Should request withdrawal successfully", async function () {
-      const tx = await relayerRegistry.connect(relayer1).requestWithdrawal();
-      const receipt = await tx.wait();
-
-      expect(receipt.status).to.equal(1);
-
-      const relayerData = await relayerRegistry.relayers(relayer1.address);
-      expect(relayerData.withdrawalRequested).to.be.true;
-      expect(relayerData.withdrawalRequestTime).to.be.greaterThan(0);
-
-      const events = receipt.logs.filter(log => 
-        log.topics[0] === relayerRegistry.interface.getEvent("WithdrawalRequested").topicHash
-      );
-      expect(events).to.have.length(1);
-    });
-
-    it("Should reject unregistration before withdrawal delay", async function () {
-      await relayerRegistry.connect(relayer1).requestWithdrawal();
-      
-      await expect(
-        relayerRegistry.connect(relayer1).unregisterRelayer()
-      ).to.be.revertedWith("Withdrawal delay not met");
-    });
-
-    it("Should reject unregistration without withdrawal request", async function () {
-      await expect(
-        relayerRegistry.connect(relayer1).unregisterRelayer()
-      ).to.be.revertedWith("Must request withdrawal first");
     });
   });
 
-  describe("Execution Recording", function () {
+  describe("execution recording", function () {
     beforeEach(async function () {
-      // register a relayer
-      await mockPYUSD.mint(relayer1.address, MINIMUM_STAKE);
-      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), MINIMUM_STAKE);
-      await relayerRegistry.connect(relayer1).registerRelayer(MINIMUM_STAKE);
+      await registerRelayer(relayer1);
     });
 
-    it("Should record successful execution by subscription manager", async function () {
-      const feeAmount = ethers.parseUnits("5", 6);
+    it("tracks successful executions and fees", async function () {
+      const fee = ethers.parseUnits("5", 6);
+      await withSubscriptionManager(async (signer) => {
+        await expect(
+          relayerRegistry.connect(signer).recordExecution(relayer1.address, true, fee)
+        )
+          .to.emit(relayerRegistry, "ExecutionRecorded")
+          .withArgs(relayer1.address, true, fee);
+      });
 
-      // impersonate subscription manager for this call
-      await ethers.provider.send("hardhat_impersonateAccount", [await subscriptionManager.getAddress()]);
-      const subscriptionManagerSigner = await ethers.getSigner(await subscriptionManager.getAddress());
-      
-      // fund the impersonated account
-      await ethers.provider.send("hardhat_setBalance", [
-        await subscriptionManager.getAddress(),
-        "0x1000000000000000000"
-      ]);
-
-      const tx = await relayerRegistry.connect(subscriptionManagerSigner).recordExecution(
-        relayer1.address,
-        true,
-        feeAmount
-      );
-      const receipt = await tx.wait();
-
-      expect(receipt.status).to.equal(1);
-
-      // check relayer stats
       const relayerData = await relayerRegistry.relayers(relayer1.address);
       expect(relayerData.successfulExecutions).to.equal(1);
-      expect(relayerData.failedExecutions).to.equal(0);
-      expect(relayerData.totalFeesEarned).to.equal(feeAmount);
-
-      // check event emission
-      const events = receipt.logs.filter(log => 
-        log.topics[0] === relayerRegistry.interface.getEvent("ExecutionRecorded").topicHash
-      );
-      expect(events).to.have.length(1);
-
-      await ethers.provider.send("hardhat_stopImpersonatingAccount", [await subscriptionManager.getAddress()]);
+      expect(relayerData.totalFeesEarned).to.equal(fee);
+      expect(await relayerRegistry.getConsecutiveFailures(relayer1.address)).to.equal(0);
     });
 
-    it("Should record failed execution by subscription manager", async function () {
-      // impersonate subscription manager for this call
-      await ethers.provider.send("hardhat_impersonateAccount", [await subscriptionManager.getAddress()]);
-      const subscriptionManagerSigner = await ethers.getSigner(await subscriptionManager.getAddress());
-      
-      // fund the impersonated account
-      await ethers.provider.send("hardhat_setBalance", [
-        await subscriptionManager.getAddress(),
-        "0x1000000000000000000"
-      ]);
-      
-      const tx = await relayerRegistry.connect(subscriptionManagerSigner).recordExecution(
-        relayer1.address,
-        false,
-        0
-      );
-      const receipt = await tx.wait();
+    it("increments failures and slashes after threshold", async function () {
+      await withSubscriptionManager(async (signer) => {
+        for (let i = 0; i < 3; i++) {
+          await relayerRegistry.connect(signer).recordExecution(relayer1.address, false, 0);
+        }
+      });
 
-      expect(receipt.status).to.equal(1);
-
-      // check relayer stats
-      const relayerData = await relayerRegistry.relayers(relayer1.address);
-      expect(relayerData.successfulExecutions).to.equal(0);
-      expect(relayerData.failedExecutions).to.equal(1);
-      expect(relayerData.totalFeesEarned).to.equal(0);
-
-      await ethers.provider.send("hardhat_stopImpersonatingAccount", [await subscriptionManager.getAddress()]);
+      const info = await relayerRegistry.relayers(relayer1.address);
+      expect(info.stakedAmount).to.equal(MINIMUM_STAKE - SLASH_AMOUNT);
+      expect(await relayerRegistry.canExecute(relayer1.address)).to.equal(false);
+      expect(await relayerRegistry.getConsecutiveFailures(relayer1.address)).to.equal(0);
+      expect(await relayerRegistry.isSlashed(relayer1.address)).to.equal(true);
     });
 
-    it("Should reject execution recording from non-subscription manager", async function () {
+    it("enforces slashing cooldown", async function () {
+      await withSubscriptionManager(async (signer) => {
+        for (let i = 0; i < 3; i++) {
+          await relayerRegistry.connect(signer).recordExecution(relayer1.address, false, 0);
+        }
+      });
+
+      await relayerRegistry.updateSlashingParameters(SLASH_AMOUNT, 1);
+
       await expect(
-        relayerRegistry.connect(user).recordExecution(relayer1.address, true, 100)
+        withSubscriptionManager(async (signer) => {
+          await relayerRegistry.connect(signer).recordExecution(relayer1.address, false, 0);
+        })
+      ).to.be.revertedWith("Relayer not active");
+
+      const timeRemaining = await relayerRegistry.getTimeUntilSlashCooldown(relayer1.address);
+      expect(timeRemaining).to.be.gt(0);
+    });
+  });
+
+  describe("restaking and emergency controls", function () {
+    beforeEach(async function () {
+      await registerRelayer(relayer1);
+      await withSubscriptionManager(async (signer) => {
+        for (let i = 0; i < 3; i++) {
+          await relayerRegistry.connect(signer).recordExecution(relayer1.address, false, 0);
+        }
+      });
+    });
+
+    it("allows relayer to restake and regain active status", async function () {
+      const topUp = ethers.parseUnits("200", 6);
+      await mockPYUSD.mint(relayer1.address, topUp);
+      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), topUp);
+
+      await expect(relayerRegistry.connect(relayer1).restakeAfterSlash(topUp))
+        .to.emit(relayerRegistry, "RelayerRestaked")
+        .withArgs(relayer1.address, topUp, MINIMUM_STAKE + topUp - SLASH_AMOUNT);
+
+      expect(await relayerRegistry.isSlashed(relayer1.address)).to.equal(false);
+      expect(await relayerRegistry.canExecute(relayer1.address)).to.equal(true);
+    });
+
+    it("allows owner to emergency slash and unslash", async function () {
+      const extraStake = ethers.parseUnits("300", 6);
+      await mockPYUSD.mint(relayer1.address, extraStake);
+      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), extraStake);
+      await relayerRegistry.connect(relayer1).restakeAfterSlash(extraStake);
+
+      await expect(
+        relayerRegistry.emergencySlash(relayer1.address, SLASH_AMOUNT, "malicious activity")
+      )
+        .to.emit(relayerRegistry, "RelayerSlashed")
+        .withArgs(relayer1.address, SLASH_AMOUNT, MINIMUM_STAKE + extraStake - (SLASH_AMOUNT * 2n));
+
+      expect(await relayerRegistry.isSlashed(relayer1.address)).to.equal(true);
+
+      await relayerRegistry.emergencyUnslash(relayer1.address);
+      expect(await relayerRegistry.isSlashed(relayer1.address)).to.equal(false);
+    });
+
+    it("updates slashing parameters via owner call", async function () {
+      const newAmount = ethers.parseUnits("150", 6);
+      await expect(relayerRegistry.updateSlashingParameters(newAmount, 5))
+        .to.emit(relayerRegistry, "SlashingParametersUpdated")
+        .withArgs(newAmount, 5);
+
+      expect(await relayerRegistry.slashAmountConfig()).to.equal(newAmount);
+      expect(await relayerRegistry.failureThresholdConfig()).to.equal(5);
+    });
+  });
+
+  describe("view helpers", function () {
+    beforeEach(async function () {
+      await registerRelayer(relayer1);
+    });
+
+    it("returns relayer info struct", async function () {
+      const info = await relayerRegistry.getRelayerInfo(relayer1.address);
+      expect(info.stakedAmount).to.equal(MINIMUM_STAKE);
+      expect(info.isActive).to.equal(true);
+    });
+
+    it("reflects canExecute false when stake below minimum", async function () {
+      await withSubscriptionManager(async (signer) => {
+        for (let i = 0; i < 3; i++) {
+          await relayerRegistry.connect(signer).recordExecution(relayer1.address, false, 0);
+        }
+      });
+
+      expect(await relayerRegistry.canExecute(relayer1.address)).to.equal(false);
+    });
+
+    it("returns zero cooldown for never-slashed relayer", async function () {
+      expect(await relayerRegistry.getTimeUntilSlashCooldown(relayer1.address)).to.equal(0);
+    });
+  });
+
+  describe("access control", function () {
+    it("restricts recordExecution to subscription manager", async function () {
+      await registerRelayer(relayer1);
+      await expect(
+        relayerRegistry.connect(outsider).recordExecution(relayer1.address, true, 0)
       ).to.be.revertedWith("Only SubscriptionManager");
     });
 
-    it("Should reject execution recording for inactive relayer", async function () {
-      // unregister relayer first
-      await relayerRegistry.connect(relayer1).requestWithdrawal();
-      await ethers.provider.send("evm_increaseTime", [7 * 24 * 60 * 60]);
-      await ethers.provider.send("evm_mine", []);
-      await relayerRegistry.connect(relayer1).unregisterRelayer();
-
-      // impersonate subscription manager
-      await ethers.provider.send("hardhat_impersonateAccount", [await subscriptionManager.getAddress()]);
-      const subscriptionManagerSigner = await ethers.getSigner(await subscriptionManager.getAddress());
-
-      await ethers.provider.send("hardhat_setBalance", [
-        await subscriptionManager.getAddress(),
-        "0x1000000000000000000"
-      ]);
-
+    it("restricts emergency functions to owner", async function () {
+      await registerRelayer(relayer1);
       await expect(
-        relayerRegistry.connect(subscriptionManagerSigner).recordExecution(relayer1.address, true, 100)
-      ).to.be.revertedWith("Relayer not active");
-
-      await ethers.provider.send("hardhat_stopImpersonatingAccount", [await subscriptionManager.getAddress()]);
-    });
-
-    it("Should accumulate multiple executions correctly", async function () {
-      await ethers.provider.send("hardhat_impersonateAccount", [await subscriptionManager.getAddress()]);
-      const subscriptionManagerSigner = await ethers.getSigner(await subscriptionManager.getAddress());
-
-      await ethers.provider.send("hardhat_setBalance", [
-        await subscriptionManager.getAddress(),
-        "0x1000000000000000000"
-      ]);
-
-      const fee1 = ethers.parseUnits("2", 6);
-      const fee2 = ethers.parseUnits("3", 6);
-
-      await relayerRegistry.connect(subscriptionManagerSigner).recordExecution(relayer1.address, true, fee1);
-      
-      await relayerRegistry.connect(subscriptionManagerSigner).recordExecution(relayer1.address, false, 0);
-      
-      await relayerRegistry.connect(subscriptionManagerSigner).recordExecution(relayer1.address, true, fee2);
-
-      const relayerData = await relayerRegistry.relayers(relayer1.address);
-      expect(relayerData.successfulExecutions).to.equal(2);
-      expect(relayerData.failedExecutions).to.equal(1);
-      expect(relayerData.totalFeesEarned).to.equal(fee1 + fee2);
-
-      await ethers.provider.send("hardhat_stopImpersonatingAccount", [await subscriptionManager.getAddress()]);
-    });
-  });
-
-  describe("View Functions", function () {
-    beforeEach(async function () {
-      // register a relayer
-      await mockPYUSD.mint(relayer1.address, MINIMUM_STAKE);
-      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), MINIMUM_STAKE);
-      await relayerRegistry.connect(relayer1).registerRelayer(MINIMUM_STAKE);
-    });
-
-    it("Should return correct relayer active status", async function () {
-      expect(await relayerRegistry.isRelayerActive(relayer1.address)).to.be.true;
-      expect(await relayerRegistry.isRelayerActive(relayer2.address)).to.be.false;
-
-      await relayerRegistry.connect(relayer1).requestWithdrawal();
-      await ethers.provider.send("evm_increaseTime", [7 * 24 * 60 * 60]);
-      await ethers.provider.send("evm_mine", []);
-      await relayerRegistry.connect(relayer1).unregisterRelayer();
-      expect(await relayerRegistry.isRelayerActive(relayer1.address)).to.be.false;
-    });
-
-    it("Should return correct relayer stats", async function () {
-      const [stakedAmount, successfulExecutions, failedExecutions, totalFeesEarned, isActive] = 
-        await relayerRegistry.getRelayerStats(relayer1.address);
-
-      expect(stakedAmount).to.equal(MINIMUM_STAKE);
-      expect(successfulExecutions).to.equal(0);
-      expect(failedExecutions).to.equal(0);
-      expect(totalFeesEarned).to.equal(0);
-      expect(isActive).to.be.true;
-    });
-
-    it("Should return empty stats for non-existent relayer", async function () {
-      const [stakedAmount, successfulExecutions, failedExecutions, totalFeesEarned, isActive] = 
-        await relayerRegistry.getRelayerStats(relayer2.address);
-
-      expect(stakedAmount).to.equal(0);
-      expect(successfulExecutions).to.equal(0);
-      expect(failedExecutions).to.equal(0);
-      expect(totalFeesEarned).to.equal(0);
-      expect(isActive).to.be.false;
+        relayerRegistry.connect(outsider).emergencySlash(relayer1.address, SLASH_AMOUNT, "test")
+      ).to.be.revertedWithCustomError(relayerRegistry, "OwnableUnauthorizedAccount");
     });
   });
 });

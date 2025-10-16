@@ -2,12 +2,12 @@
 
 use anyhow::Result;
 use std::sync::Arc;
-use tracing::{info, error, Level};
-use tracing_subscriber;
 use tokio::signal;
+use tracing::{error, info, Level};
+use tracing_subscriber;
 
-use relayer::{Config, Database, BlockchainClient, Scheduler, AppState};
 use relayer::api::ApiServer;
+use relayer::{AppState, BlockchainClient, Config, Database, Scheduler};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -29,9 +29,18 @@ async fn main() -> Result<()> {
     })?;
 
     info!("configuration loaded successfully");
-    info!("server will run on {}:{}", config.server_host, config.server_port);
-    info!("execution interval: {} seconds", config.execution_interval_seconds);
-    info!("max executions per batch: {}", config.max_executions_per_batch);
+    info!(
+        "server will run on {}:{}",
+        config.server_host, config.server_port
+    );
+    info!(
+        "execution interval: {} seconds",
+        config.execution_interval_seconds
+    );
+    info!(
+        "max executions per batch: {}",
+        config.max_executions_per_batch
+    );
     if let Some(ref envio_url) = config.envio_hyperindex_url {
         info!("envio hyperindex url: {}", envio_url);
     }
@@ -72,7 +81,9 @@ async fn main() -> Result<()> {
         Arc::new(app_state.database.queries().clone()),
         Arc::new(app_state.blockchain_client.clone()),
         app_state.database.pool().clone(),
-    ).await.map_err(|e| {
+    )
+    .await
+    .map_err(|e| {
         error!("failed to initialize scheduler: {}", e);
         e
     })?;
@@ -93,17 +104,28 @@ async fn main() -> Result<()> {
         let config = config.clone();
         tokio::spawn(async move {
             info!("starting REST API server");
-            if let Err(e) = ApiServer::serve(api_router, &config.server_host, config.server_port).await {
+            if let Err(e) =
+                ApiServer::serve(api_router, &config.server_host, config.server_port).await
+            {
                 error!("API server error: {}", e);
             }
         })
     };
 
     info!("aurum relayer service started successfully");
-    info!("- REST API server: http://{}:{}", config.server_host, config.server_port);
-    info!("- payment scheduler running every {} seconds", config.execution_interval_seconds);
-    info!("- health endpoint: http://{}:{}/health", config.server_host, config.server_port);
-    
+    info!(
+        "- REST API server: http://{}:{}",
+        config.server_host, config.server_port
+    );
+    info!(
+        "- payment scheduler running every {} seconds",
+        config.execution_interval_seconds
+    );
+    info!(
+        "- health endpoint: http://{}:{}/health",
+        config.server_host, config.server_port
+    );
+
     // wait for shutdown signal
     tokio::select! {
         _ = signal::ctrl_c() => {

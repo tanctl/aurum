@@ -4,6 +4,7 @@ const { ethers } = require("hardhat");
 describe("SubscriptionManager", function () {
   let subscriptionManager;
   let mockPYUSD;
+  let relayerRegistry;
   let owner;
   let subscriber;
   let merchant;
@@ -106,6 +107,14 @@ describe("SubscriptionManager", function () {
     return await signer.signTypedData(domain, types, values);
   }
 
+  const MINIMUM_STAKE = ethers.parseUnits("1000", 6);
+
+  async function registerActiveRelayer() {
+    await mockPYUSD.mint(relayer.address, MINIMUM_STAKE);
+    await mockPYUSD.connect(relayer).approve(await relayerRegistry.getAddress(), MINIMUM_STAKE);
+    await relayerRegistry.connect(relayer).registerRelayer(MINIMUM_STAKE);
+  }
+
   beforeEach(async function () {
     [owner, subscriber, merchant, relayer] = await ethers.getSigners();
 
@@ -114,7 +123,7 @@ describe("SubscriptionManager", function () {
     await mockPYUSD.waitForDeployment();
 
     const RelayerRegistry = await ethers.getContractFactory("RelayerRegistry");
-    const relayerRegistry = await RelayerRegistry.deploy(await mockPYUSD.getAddress());
+    relayerRegistry = await RelayerRegistry.deploy(await mockPYUSD.getAddress());
     await relayerRegistry.waitForDeployment();
 
     const SubscriptionManager = await ethers.getContractFactory("SubscriptionManager");
@@ -520,17 +529,38 @@ describe("SubscriptionManager", function () {
     });
 
     it("Should reject payment execution on paused subscription", async function () {
+      await registerActiveRelayer();
       // pause subscription
       const pauseSignature = await signPauseRequest(subscriptionId);
       await subscriptionManager.pauseSubscription(subscriptionId, pauseSignature);
       
       // try to execute payment
       await expect(
-        subscriptionManager.executeSubscription(subscriptionId, relayer.address)
+        subscriptionManager.connect(relayer).executeSubscription(subscriptionId, relayer.address)
       ).to.be.revertedWith("Subscription not active");
     });
 
+    it("Should reject execution from unregistered relayer", async function () {
+      await expect(
+        subscriptionManager.connect(relayer).executeSubscription(subscriptionId, relayer.address)
+      ).to.be.revertedWith("Relayer not authorized");
+    });
+
+    it("Should slash relayer after repeated on-chain failures", async function () {
+      await registerActiveRelayer();
+      await mockPYUSD.setForceFailOnTransfer(subscriber.address, true);
+
+      for (let i = 0; i < 3; i++) {
+        await subscriptionManager.connect(relayer).executeSubscription(subscriptionId, relayer.address);
+      }
+
+      expect(await relayerRegistry.isSlashed(relayer.address)).to.equal(true);
+      const stakeInfo = await relayerRegistry.relayers(relayer.address);
+      expect(stakeInfo.isActive).to.equal(false);
+    });
+
     it("Should allow payment execution after resume", async function () {
+      await registerActiveRelayer();
       // pause subscription
       const pauseSignature = await signPauseRequest(subscriptionId);
       await subscriptionManager.pauseSubscription(subscriptionId, pauseSignature);
@@ -545,7 +575,7 @@ describe("SubscriptionManager", function () {
       
       // check that we can call the execution (it may fail due to timing but not due to status)
       try {
-        await subscriptionManager.executeSubscription(subscriptionId, relayer.address);
+        await subscriptionManager.connect(relayer).executeSubscription(subscriptionId, relayer.address);
       } catch (error) {
         // if it fails, it should be due to timing, not status
         expect(error.message).to.not.include("Subscription not active");
@@ -553,12 +583,13 @@ describe("SubscriptionManager", function () {
     });
 
     it("Should reject payment execution on cancelled subscription", async function () {
+      await registerActiveRelayer();
       // cancel subscription
       await subscriptionManager.connect(subscriber).cancelSubscription(subscriptionId);
       
       // try to execute payment
       await expect(
-        subscriptionManager.executeSubscription(subscriptionId, relayer.address)
+        subscriptionManager.connect(relayer).executeSubscription(subscriptionId, relayer.address)
       ).to.be.revertedWith("Subscription not active");
     });
   });

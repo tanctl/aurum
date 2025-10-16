@@ -43,8 +43,7 @@ impl Config {
                 .context("PYUSD_ADDRESS_SEPOLIA environment variable is required")?,
             pyusd_address_base: env::var("PYUSD_ADDRESS_BASE")
                 .context("PYUSD_ADDRESS_BASE environment variable is required")?,
-            server_host: env::var("SERVER_HOST")
-                .unwrap_or_else(|_| "0.0.0.0".to_string()),
+            server_host: env::var("SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             server_port: env::var("SERVER_PORT")
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()
@@ -75,8 +74,14 @@ impl Config {
     fn validate(&self) -> Result<()> {
         // validate that addresses are valid eth addresses (42 chars starting with 0x)
         let addresses = [
-            (&self.subscription_manager_address_sepolia, "SUBSCRIPTION_MANAGER_ADDRESS_SEPOLIA"),
-            (&self.subscription_manager_address_base, "SUBSCRIPTION_MANAGER_ADDRESS_BASE"),
+            (
+                &self.subscription_manager_address_sepolia,
+                "SUBSCRIPTION_MANAGER_ADDRESS_SEPOLIA",
+            ),
+            (
+                &self.subscription_manager_address_base,
+                "SUBSCRIPTION_MANAGER_ADDRESS_BASE",
+            ),
             (&self.pyusd_address_sepolia, "PYUSD_ADDRESS_SEPOLIA"),
             (&self.pyusd_address_base, "PYUSD_ADDRESS_BASE"),
             (&self.relayer_address, "RELAYER_ADDRESS"),
@@ -112,9 +117,7 @@ impl Config {
         }
 
         if !self.base_rpc_url.starts_with("http") {
-            return Err(anyhow::anyhow!(
-                "BASE_RPC_URL must be a valid http(s) url"
-            ));
+            return Err(anyhow::anyhow!("BASE_RPC_URL must be a valid http(s) url"));
         }
 
         if !self.database_url.starts_with("postgres") {

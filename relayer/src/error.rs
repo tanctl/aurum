@@ -31,9 +31,13 @@ impl fmt::Display for RelayerError {
         match self {
             RelayerError::Database(err) => write!(f, "database error: {}", err),
             RelayerError::DatabaseError(msg) => write!(f, "database error: {}", msg),
-            RelayerError::DatabaseConnection(msg) => write!(f, "database connection error: {}", msg),
+            RelayerError::DatabaseConnection(msg) => {
+                write!(f, "database connection error: {}", msg)
+            }
             RelayerError::DatabaseMigration(msg) => write!(f, "database migration error: {}", msg),
-            RelayerError::DatabaseConstraint(msg) => write!(f, "database constraint error: {}", msg),
+            RelayerError::DatabaseConstraint(msg) => {
+                write!(f, "database constraint error: {}", msg)
+            }
             RelayerError::Ethereum(err) => write!(f, "ethereum error: {}", err),
             RelayerError::TransactionFailed(msg) => write!(f, "transaction failed: {}", msg),
             RelayerError::InsufficientGas(msg) => write!(f, "insufficient gas: {}", msg),
@@ -57,7 +61,10 @@ impl From<sqlx::Error> for RelayerError {
             sqlx::Error::Database(db_err) => {
                 // handle specific database constraint errors
                 if let Some(constraint) = db_err.constraint() {
-                    RelayerError::DatabaseConstraint(format!("constraint violation: {}", constraint))
+                    RelayerError::DatabaseConstraint(format!(
+                        "constraint violation: {}",
+                        constraint
+                    ))
                 } else if db_err.is_unique_violation() {
                     RelayerError::Duplicate("unique constraint violation".to_string())
                 } else if db_err.is_foreign_key_violation() {
@@ -66,7 +73,9 @@ impl From<sqlx::Error> for RelayerError {
                     RelayerError::Database(err)
                 }
             }
-            sqlx::Error::RowNotFound => RelayerError::NotFound("database row not found".to_string()),
+            sqlx::Error::RowNotFound => {
+                RelayerError::NotFound("database row not found".to_string())
+            }
             _ => RelayerError::Database(err),
         }
     }
@@ -107,10 +116,9 @@ impl IntoResponse for RelayerError {
                 StatusCode::BAD_REQUEST,
                 "database constraint violation".to_string(),
             ),
-            RelayerError::Ethereum(_) => (
-                StatusCode::BAD_GATEWAY,
-                "ethereum rpc error".to_string(),
-            ),
+            RelayerError::Ethereum(_) => {
+                (StatusCode::BAD_GATEWAY, "ethereum rpc error".to_string())
+            }
             RelayerError::TransactionFailed(_) => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "transaction execution failed".to_string(),
@@ -119,10 +127,9 @@ impl IntoResponse for RelayerError {
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "insufficient gas for transaction".to_string(),
             ),
-            RelayerError::NonceError(_) => (
-                StatusCode::CONFLICT,
-                "transaction nonce error".to_string(),
-            ),
+            RelayerError::NonceError(_) => {
+                (StatusCode::CONFLICT, "transaction nonce error".to_string())
+            }
             RelayerError::ContractRevert(_) => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "contract execution reverted".to_string(),

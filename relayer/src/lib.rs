@@ -5,17 +5,17 @@
 #![allow(clippy::single_component_path_imports)]
 #![allow(clippy::type_complexity)]
 
+pub mod api;
+pub mod blockchain;
 pub mod config;
 pub mod database;
 pub mod error;
-pub mod blockchain;
 pub mod scheduler;
-pub mod api;
 
+pub use blockchain::BlockchainClient;
 pub use config::Config;
 pub use database::Database;
 pub use error::{RelayerError, Result};
-pub use blockchain::BlockchainClient;
 pub use scheduler::Scheduler;
 
 #[derive(Clone)]

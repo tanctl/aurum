@@ -23,35 +23,89 @@ import type {
   TypedContractMethod,
 } from "../common";
 
+export declare namespace RelayerRegistry {
+  export type RelayerStruct = {
+    stakedAmount: BigNumberish;
+    successfulExecutions: BigNumberish;
+    failedExecutions: BigNumberish;
+    totalFeesEarned: BigNumberish;
+    withdrawalRequestTime: BigNumberish;
+    isActive: boolean;
+    withdrawalRequested: boolean;
+  };
+
+  export type RelayerStructOutput = [
+    stakedAmount: bigint,
+    successfulExecutions: bigint,
+    failedExecutions: bigint,
+    totalFeesEarned: bigint,
+    withdrawalRequestTime: bigint,
+    isActive: boolean,
+    withdrawalRequested: boolean
+  ] & {
+    stakedAmount: bigint;
+    successfulExecutions: bigint;
+    failedExecutions: bigint;
+    totalFeesEarned: bigint;
+    withdrawalRequestTime: bigint;
+    isActive: boolean;
+    withdrawalRequested: boolean;
+  };
+}
+
 export interface RelayerRegistryInterface extends Interface {
   getFunction(
     nameOrSignature:
+      | "CONSECUTIVE_FAILURES_THRESHOLD"
       | "MINIMUM_STAKE"
       | "PYUSD_ADDRESS"
+      | "SLASHING_COOLDOWN"
+      | "SLASH_AMOUNT"
       | "WITHDRAWAL_DELAY"
+      | "canExecute"
+      | "consecutiveFailures"
+      | "emergencySlash"
+      | "emergencyUnslash"
+      | "failureThresholdConfig"
+      | "getConsecutiveFailures"
+      | "getRelayerInfo"
       | "getRelayerStats"
+      | "getTimeUntilSlashCooldown"
       | "isRelayerActive"
+      | "isSlashed"
+      | "lastSlashTime"
       | "owner"
       | "recordExecution"
       | "registerRelayer"
       | "relayers"
       | "renounceOwnership"
       | "requestWithdrawal"
+      | "restakeAfterSlash"
       | "setSubscriptionManager"
+      | "slashAmountConfig"
       | "subscriptionManager"
       | "transferOwnership"
       | "unregisterRelayer"
+      | "updateSlashingParameters"
   ): FunctionFragment;
 
   getEvent(
     nameOrSignatureOrTopic:
+      | "EmergencySlash"
       | "ExecutionRecorded"
       | "OwnershipTransferred"
       | "RelayerRegistered"
+      | "RelayerRestaked"
+      | "RelayerSlashed"
       | "RelayerUnregistered"
+      | "SlashingParametersUpdated"
       | "WithdrawalRequested"
   ): EventFragment;
 
+  encodeFunctionData(
+    functionFragment: "CONSECUTIVE_FAILURES_THRESHOLD",
+    values?: undefined
+  ): string;
   encodeFunctionData(
     functionFragment: "MINIMUM_STAKE",
     values?: undefined
@@ -61,15 +115,63 @@ export interface RelayerRegistryInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "SLASHING_COOLDOWN",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "SLASH_AMOUNT",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "WITHDRAWAL_DELAY",
     values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "canExecute",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "consecutiveFailures",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "emergencySlash",
+    values: [AddressLike, BigNumberish, string]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "emergencyUnslash",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "failureThresholdConfig",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getConsecutiveFailures",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getRelayerInfo",
+    values: [AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "getRelayerStats",
     values: [AddressLike]
   ): string;
   encodeFunctionData(
+    functionFragment: "getTimeUntilSlashCooldown",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "isRelayerActive",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "isSlashed",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "lastSlashTime",
     values: [AddressLike]
   ): string;
   encodeFunctionData(functionFragment: "owner", values?: undefined): string;
@@ -94,8 +196,16 @@ export interface RelayerRegistryInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "restakeAfterSlash",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "setSubscriptionManager",
     values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "slashAmountConfig",
+    values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "subscriptionManager",
@@ -109,7 +219,15 @@ export interface RelayerRegistryInterface extends Interface {
     functionFragment: "unregisterRelayer",
     values?: undefined
   ): string;
+  encodeFunctionData(
+    functionFragment: "updateSlashingParameters",
+    values: [BigNumberish, BigNumberish]
+  ): string;
 
+  decodeFunctionResult(
+    functionFragment: "CONSECUTIVE_FAILURES_THRESHOLD",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "MINIMUM_STAKE",
     data: BytesLike
@@ -119,7 +237,40 @@ export interface RelayerRegistryInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "SLASHING_COOLDOWN",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "SLASH_AMOUNT",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "WITHDRAWAL_DELAY",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "canExecute", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "consecutiveFailures",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "emergencySlash",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "emergencyUnslash",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "failureThresholdConfig",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "getConsecutiveFailures",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "getRelayerInfo",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -127,7 +278,16 @@ export interface RelayerRegistryInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "getTimeUntilSlashCooldown",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "isRelayerActive",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "isSlashed", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "lastSlashTime",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
@@ -149,7 +309,15 @@ export interface RelayerRegistryInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "restakeAfterSlash",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "setSubscriptionManager",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "slashAmountConfig",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -164,6 +332,28 @@ export interface RelayerRegistryInterface extends Interface {
     functionFragment: "unregisterRelayer",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "updateSlashingParameters",
+    data: BytesLike
+  ): Result;
+}
+
+export namespace EmergencySlashEvent {
+  export type InputTuple = [
+    relayer: AddressLike,
+    amount: BigNumberish,
+    reason: string
+  ];
+  export type OutputTuple = [relayer: string, amount: bigint, reason: string];
+  export interface OutputObject {
+    relayer: string;
+    amount: bigint;
+    reason: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
 }
 
 export namespace ExecutionRecordedEvent {
@@ -214,12 +404,68 @@ export namespace RelayerRegisteredEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
+export namespace RelayerRestakedEvent {
+  export type InputTuple = [
+    relayer: AddressLike,
+    amount: BigNumberish,
+    newStake: BigNumberish
+  ];
+  export type OutputTuple = [relayer: string, amount: bigint, newStake: bigint];
+  export interface OutputObject {
+    relayer: string;
+    amount: bigint;
+    newStake: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace RelayerSlashedEvent {
+  export type InputTuple = [
+    relayer: AddressLike,
+    slashAmount: BigNumberish,
+    remainingStake: BigNumberish
+  ];
+  export type OutputTuple = [
+    relayer: string,
+    slashAmount: bigint,
+    remainingStake: bigint
+  ];
+  export interface OutputObject {
+    relayer: string;
+    slashAmount: bigint;
+    remainingStake: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
 export namespace RelayerUnregisteredEvent {
   export type InputTuple = [relayer: AddressLike, returnedStake: BigNumberish];
   export type OutputTuple = [relayer: string, returnedStake: bigint];
   export interface OutputObject {
     relayer: string;
     returnedStake: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace SlashingParametersUpdatedEvent {
+  export type InputTuple = [
+    slashAmount: BigNumberish,
+    failureThreshold: BigNumberish
+  ];
+  export type OutputTuple = [slashAmount: bigint, failureThreshold: bigint];
+  export interface OutputObject {
+    slashAmount: bigint;
+    failureThreshold: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -283,11 +529,55 @@ export interface RelayerRegistry extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  CONSECUTIVE_FAILURES_THRESHOLD: TypedContractMethod<[], [bigint], "view">;
+
   MINIMUM_STAKE: TypedContractMethod<[], [bigint], "view">;
 
   PYUSD_ADDRESS: TypedContractMethod<[], [string], "view">;
 
+  SLASHING_COOLDOWN: TypedContractMethod<[], [bigint], "view">;
+
+  SLASH_AMOUNT: TypedContractMethod<[], [bigint], "view">;
+
   WITHDRAWAL_DELAY: TypedContractMethod<[], [bigint], "view">;
+
+  canExecute: TypedContractMethod<
+    [relayerAddress: AddressLike],
+    [boolean],
+    "view"
+  >;
+
+  consecutiveFailures: TypedContractMethod<
+    [arg0: AddressLike],
+    [bigint],
+    "view"
+  >;
+
+  emergencySlash: TypedContractMethod<
+    [relayerAddress: AddressLike, amount: BigNumberish, reason: string],
+    [void],
+    "nonpayable"
+  >;
+
+  emergencyUnslash: TypedContractMethod<
+    [relayerAddress: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
+  failureThresholdConfig: TypedContractMethod<[], [bigint], "view">;
+
+  getConsecutiveFailures: TypedContractMethod<
+    [relayerAddress: AddressLike],
+    [bigint],
+    "view"
+  >;
+
+  getRelayerInfo: TypedContractMethod<
+    [relayerAddress: AddressLike],
+    [RelayerRegistry.RelayerStructOutput],
+    "view"
+  >;
 
   getRelayerStats: TypedContractMethod<
     [relayerAddress: AddressLike],
@@ -303,11 +593,21 @@ export interface RelayerRegistry extends BaseContract {
     "view"
   >;
 
+  getTimeUntilSlashCooldown: TypedContractMethod<
+    [relayerAddress: AddressLike],
+    [bigint],
+    "view"
+  >;
+
   isRelayerActive: TypedContractMethod<
     [relayerAddress: AddressLike],
     [boolean],
     "view"
   >;
+
+  isSlashed: TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
+
+  lastSlashTime: TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
 
   owner: TypedContractMethod<[], [string], "view">;
 
@@ -326,13 +626,13 @@ export interface RelayerRegistry extends BaseContract {
   relayers: TypedContractMethod<
     [arg0: AddressLike],
     [
-      [bigint, bigint, bigint, bigint, boolean, bigint, boolean] & {
+      [bigint, bigint, bigint, bigint, bigint, boolean, boolean] & {
         stakedAmount: bigint;
         successfulExecutions: bigint;
         failedExecutions: bigint;
         totalFeesEarned: bigint;
-        isActive: boolean;
         withdrawalRequestTime: bigint;
+        isActive: boolean;
         withdrawalRequested: boolean;
       }
     ],
@@ -343,11 +643,19 @@ export interface RelayerRegistry extends BaseContract {
 
   requestWithdrawal: TypedContractMethod<[], [void], "nonpayable">;
 
+  restakeAfterSlash: TypedContractMethod<
+    [amount: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
   setSubscriptionManager: TypedContractMethod<
     [_subscriptionManager: AddressLike],
     [void],
     "nonpayable"
   >;
+
+  slashAmountConfig: TypedContractMethod<[], [bigint], "view">;
 
   subscriptionManager: TypedContractMethod<[], [string], "view">;
 
@@ -359,10 +667,19 @@ export interface RelayerRegistry extends BaseContract {
 
   unregisterRelayer: TypedContractMethod<[], [void], "nonpayable">;
 
+  updateSlashingParameters: TypedContractMethod<
+    [slashAmount: BigNumberish, failureThreshold: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
   ): T;
 
+  getFunction(
+    nameOrSignature: "CONSECUTIVE_FAILURES_THRESHOLD"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "MINIMUM_STAKE"
   ): TypedContractMethod<[], [bigint], "view">;
@@ -370,8 +687,43 @@ export interface RelayerRegistry extends BaseContract {
     nameOrSignature: "PYUSD_ADDRESS"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
+    nameOrSignature: "SLASHING_COOLDOWN"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "SLASH_AMOUNT"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
     nameOrSignature: "WITHDRAWAL_DELAY"
   ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "canExecute"
+  ): TypedContractMethod<[relayerAddress: AddressLike], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "consecutiveFailures"
+  ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "emergencySlash"
+  ): TypedContractMethod<
+    [relayerAddress: AddressLike, amount: BigNumberish, reason: string],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "emergencyUnslash"
+  ): TypedContractMethod<[relayerAddress: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "failureThresholdConfig"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "getConsecutiveFailures"
+  ): TypedContractMethod<[relayerAddress: AddressLike], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "getRelayerInfo"
+  ): TypedContractMethod<
+    [relayerAddress: AddressLike],
+    [RelayerRegistry.RelayerStructOutput],
+    "view"
+  >;
   getFunction(
     nameOrSignature: "getRelayerStats"
   ): TypedContractMethod<
@@ -388,8 +740,17 @@ export interface RelayerRegistry extends BaseContract {
     "view"
   >;
   getFunction(
+    nameOrSignature: "getTimeUntilSlashCooldown"
+  ): TypedContractMethod<[relayerAddress: AddressLike], [bigint], "view">;
+  getFunction(
     nameOrSignature: "isRelayerActive"
   ): TypedContractMethod<[relayerAddress: AddressLike], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "isSlashed"
+  ): TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "lastSlashTime"
+  ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
   getFunction(
     nameOrSignature: "owner"
   ): TypedContractMethod<[], [string], "view">;
@@ -408,13 +769,13 @@ export interface RelayerRegistry extends BaseContract {
   ): TypedContractMethod<
     [arg0: AddressLike],
     [
-      [bigint, bigint, bigint, bigint, boolean, bigint, boolean] & {
+      [bigint, bigint, bigint, bigint, bigint, boolean, boolean] & {
         stakedAmount: bigint;
         successfulExecutions: bigint;
         failedExecutions: bigint;
         totalFeesEarned: bigint;
-        isActive: boolean;
         withdrawalRequestTime: bigint;
+        isActive: boolean;
         withdrawalRequested: boolean;
       }
     ],
@@ -427,12 +788,18 @@ export interface RelayerRegistry extends BaseContract {
     nameOrSignature: "requestWithdrawal"
   ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
+    nameOrSignature: "restakeAfterSlash"
+  ): TypedContractMethod<[amount: BigNumberish], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "setSubscriptionManager"
   ): TypedContractMethod<
     [_subscriptionManager: AddressLike],
     [void],
     "nonpayable"
   >;
+  getFunction(
+    nameOrSignature: "slashAmountConfig"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "subscriptionManager"
   ): TypedContractMethod<[], [string], "view">;
@@ -442,7 +809,21 @@ export interface RelayerRegistry extends BaseContract {
   getFunction(
     nameOrSignature: "unregisterRelayer"
   ): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "updateSlashingParameters"
+  ): TypedContractMethod<
+    [slashAmount: BigNumberish, failureThreshold: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
 
+  getEvent(
+    key: "EmergencySlash"
+  ): TypedContractEvent<
+    EmergencySlashEvent.InputTuple,
+    EmergencySlashEvent.OutputTuple,
+    EmergencySlashEvent.OutputObject
+  >;
   getEvent(
     key: "ExecutionRecorded"
   ): TypedContractEvent<
@@ -465,11 +846,32 @@ export interface RelayerRegistry extends BaseContract {
     RelayerRegisteredEvent.OutputObject
   >;
   getEvent(
+    key: "RelayerRestaked"
+  ): TypedContractEvent<
+    RelayerRestakedEvent.InputTuple,
+    RelayerRestakedEvent.OutputTuple,
+    RelayerRestakedEvent.OutputObject
+  >;
+  getEvent(
+    key: "RelayerSlashed"
+  ): TypedContractEvent<
+    RelayerSlashedEvent.InputTuple,
+    RelayerSlashedEvent.OutputTuple,
+    RelayerSlashedEvent.OutputObject
+  >;
+  getEvent(
     key: "RelayerUnregistered"
   ): TypedContractEvent<
     RelayerUnregisteredEvent.InputTuple,
     RelayerUnregisteredEvent.OutputTuple,
     RelayerUnregisteredEvent.OutputObject
+  >;
+  getEvent(
+    key: "SlashingParametersUpdated"
+  ): TypedContractEvent<
+    SlashingParametersUpdatedEvent.InputTuple,
+    SlashingParametersUpdatedEvent.OutputTuple,
+    SlashingParametersUpdatedEvent.OutputObject
   >;
   getEvent(
     key: "WithdrawalRequested"
@@ -480,6 +882,17 @@ export interface RelayerRegistry extends BaseContract {
   >;
 
   filters: {
+    "EmergencySlash(address,uint256,string)": TypedContractEvent<
+      EmergencySlashEvent.InputTuple,
+      EmergencySlashEvent.OutputTuple,
+      EmergencySlashEvent.OutputObject
+    >;
+    EmergencySlash: TypedContractEvent<
+      EmergencySlashEvent.InputTuple,
+      EmergencySlashEvent.OutputTuple,
+      EmergencySlashEvent.OutputObject
+    >;
+
     "ExecutionRecorded(address,bool,uint256)": TypedContractEvent<
       ExecutionRecordedEvent.InputTuple,
       ExecutionRecordedEvent.OutputTuple,
@@ -513,6 +926,28 @@ export interface RelayerRegistry extends BaseContract {
       RelayerRegisteredEvent.OutputObject
     >;
 
+    "RelayerRestaked(address,uint256,uint256)": TypedContractEvent<
+      RelayerRestakedEvent.InputTuple,
+      RelayerRestakedEvent.OutputTuple,
+      RelayerRestakedEvent.OutputObject
+    >;
+    RelayerRestaked: TypedContractEvent<
+      RelayerRestakedEvent.InputTuple,
+      RelayerRestakedEvent.OutputTuple,
+      RelayerRestakedEvent.OutputObject
+    >;
+
+    "RelayerSlashed(address,uint256,uint256)": TypedContractEvent<
+      RelayerSlashedEvent.InputTuple,
+      RelayerSlashedEvent.OutputTuple,
+      RelayerSlashedEvent.OutputObject
+    >;
+    RelayerSlashed: TypedContractEvent<
+      RelayerSlashedEvent.InputTuple,
+      RelayerSlashedEvent.OutputTuple,
+      RelayerSlashedEvent.OutputObject
+    >;
+
     "RelayerUnregistered(address,uint256)": TypedContractEvent<
       RelayerUnregisteredEvent.InputTuple,
       RelayerUnregisteredEvent.OutputTuple,
@@ -522,6 +957,17 @@ export interface RelayerRegistry extends BaseContract {
       RelayerUnregisteredEvent.InputTuple,
       RelayerUnregisteredEvent.OutputTuple,
       RelayerUnregisteredEvent.OutputObject
+    >;
+
+    "SlashingParametersUpdated(uint256,uint256)": TypedContractEvent<
+      SlashingParametersUpdatedEvent.InputTuple,
+      SlashingParametersUpdatedEvent.OutputTuple,
+      SlashingParametersUpdatedEvent.OutputObject
+    >;
+    SlashingParametersUpdated: TypedContractEvent<
+      SlashingParametersUpdatedEvent.InputTuple,
+      SlashingParametersUpdatedEvent.OutputTuple,
+      SlashingParametersUpdatedEvent.OutputObject
     >;
 
     "WithdrawalRequested(address,uint256)": TypedContractEvent<

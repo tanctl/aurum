@@ -1,10 +1,10 @@
 pub mod models;
 pub mod queries;
 
-use anyhow::Result;
-use sqlx::{PgPool, postgres::PgPoolOptions};
-use tracing::{info, error};
 use crate::database::queries::Queries;
+use anyhow::Result;
+use sqlx::{postgres::PgPoolOptions, PgPool};
+use tracing::{error, info};
 
 #[derive(Debug, Clone)]
 pub struct Database {
@@ -14,7 +14,7 @@ pub struct Database {
 impl Database {
     pub async fn new(database_url: &str) -> Result<Self> {
         info!("connecting to database at {}", database_url);
-        
+
         let pool = PgPoolOptions::new()
             .max_connections(20)
             .connect(database_url)
@@ -25,7 +25,7 @@ impl Database {
             })?;
 
         info!("database connection established");
-        
+
         Ok(Database { pool })
     }
 
@@ -37,7 +37,7 @@ impl Database {
                 error!("database ping failed: {}", e);
                 anyhow::anyhow!("database ping failed: {}", e)
             })?;
-        
+
         info!("database ping successful");
         Ok(())
     }
@@ -52,7 +52,7 @@ impl Database {
 
     pub async fn run_migrations(&self) -> Result<()> {
         info!("running database migrations");
-        
+
         sqlx::migrate!("./migrations")
             .run(&self.pool)
             .await

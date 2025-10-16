@@ -2,13 +2,11 @@
 pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./RelayerRegistry.sol";
 
 contract SubscriptionManager is ReentrancyGuard {
-    using SafeERC20 for IERC20;
     enum SubscriptionStatus {
         ACTIVE,
         PAUSED,
@@ -223,12 +221,14 @@ contract SubscriptionManager is ReentrancyGuard {
         bytes32 subscriptionId,
         address relayer
     ) external nonReentrant {
+        require(relayer == msg.sender, "Relayer mismatch");
+        require(RELAYER_REGISTRY.canExecute(msg.sender), "Relayer not authorized");
+
         Subscription storage subscription = subscriptions[subscriptionId];
         
         require(subscription.subscriber != address(0), "Subscription does not exist");
         require(subscription.status == SubscriptionStatus.ACTIVE, "Subscription not active");
         
-        require(RELAYER_REGISTRY.isRelayerActive(relayer), "Relayer not active");
         // handle expired subscriptions
         if (block.timestamp > subscription.expiry) {
             subscription.status = SubscriptionStatus.EXPIRED;
@@ -240,7 +240,7 @@ contract SubscriptionManager is ReentrancyGuard {
                 "Subscription expired"
             );
             
-            RELAYER_REGISTRY.recordExecution(relayer, false, 0);
+            RELAYER_REGISTRY.recordExecution(msg.sender, false, 0);
             return;
         }
         
@@ -250,35 +250,51 @@ contract SubscriptionManager is ReentrancyGuard {
         
         uint256 fee = (subscription.amount * PROTOCOL_FEE_BPS) / 10000;
         
-        require(_canExecutePayment(subscriptionId, fee), "Cannot execute payment");
+        if (!_canExecutePayment(subscriptionId)) {
+            emit PaymentFailed(
+                subscriptionId,
+                subscription.subscriber,
+                subscription.merchant,
+                subscription.amount,
+                "Execution constraints not met"
+            );
+            RELAYER_REGISTRY.recordExecution(msg.sender, false, 0);
+            return;
+        }
         uint256 merchantAmount = subscription.amount - fee;
         
-        IERC20 pyusd = IERC20(PYUSD_ADDRESS);
-        
-        // security checks before atomic transfers
-        require(pyusd.balanceOf(subscription.subscriber) >= subscription.amount, "Insufficient balance for payment");
-        require(pyusd.allowance(subscription.subscriber, address(this)) >= subscription.amount, "Insufficient allowance for payment");
-        
-        // atomic transfers: merchant gets amount minus fee, relayer gets fee
-        pyusd.safeTransferFrom(subscription.subscriber, subscription.merchant, merchantAmount);
-        pyusd.safeTransferFrom(subscription.subscriber, relayer, fee);
-        
-        executedPayments[subscriptionId]++;
-        
-        emit PaymentExecuted(
-            subscriptionId,
-            subscription.subscriber,
-            subscription.merchant,
-            currentPaymentNumber,
-            subscription.amount,
-            fee,
-            relayer
-        );
-        
-        RELAYER_REGISTRY.recordExecution(relayer, true, fee);
-        // mark as completed if max payments reached
-        if (executedPayments[subscriptionId] >= subscription.maxPayments) {
-            subscription.status = SubscriptionStatus.COMPLETED;
+        (bool paymentSuccess, string memory failureReason) = _attemptPayment(subscription, merchantAmount, fee);
+
+        if (paymentSuccess) {
+            executedPayments[subscriptionId]++;
+            
+            emit PaymentExecuted(
+                subscriptionId,
+                subscription.subscriber,
+                subscription.merchant,
+                currentPaymentNumber,
+                subscription.amount,
+                fee,
+                msg.sender
+            );
+            
+            RELAYER_REGISTRY.recordExecution(msg.sender, true, fee);
+            // mark as completed if max payments reached
+            if (executedPayments[subscriptionId] >= subscription.maxPayments) {
+                subscription.status = SubscriptionStatus.COMPLETED;
+            }
+        } else {
+            if (bytes(failureReason).length == 0) {
+                failureReason = "Payment execution failed";
+            }
+            emit PaymentFailed(
+                subscriptionId,
+                subscription.subscriber,
+                subscription.merchant,
+                subscription.amount,
+                failureReason
+            );
+            RELAYER_REGISTRY.recordExecution(msg.sender, false, 0);
         }
     }
 
@@ -385,7 +401,7 @@ contract SubscriptionManager is ReentrancyGuard {
         return block.timestamp >= nextPaymentTime;
     }
     
-    function _canExecutePayment(bytes32 subscriptionId, uint256) internal view returns (bool) {
+    function _canExecutePayment(bytes32 subscriptionId) internal view returns (bool) {
         Subscription storage subscription = subscriptions[subscriptionId];
         uint256 paymentsExecuted = executedPayments[subscriptionId];
         
@@ -419,5 +435,61 @@ contract SubscriptionManager is ReentrancyGuard {
         require(intent.interval > 0, "Interval must be greater than zero");
         require(intent.maxPayments > 0, "Max payments must be greater than zero");
         require(intent.maxTotalAmount >= intent.amount * intent.maxPayments, "Max total amount insufficient");
+    }
+
+    function _attemptPayment(
+        Subscription storage subscription,
+        uint256 merchantAmount,
+        uint256 fee
+    ) internal returns (bool success, string memory failureReason) {
+        IERC20 pyusd = IERC20(PYUSD_ADDRESS);
+
+        uint256 totalRequired = subscription.amount;
+        if (pyusd.balanceOf(subscription.subscriber) < totalRequired) {
+            return (false, "Insufficient balance for payment");
+        }
+
+        if (pyusd.allowance(subscription.subscriber, address(this)) < totalRequired) {
+            return (false, "Insufficient allowance for payment");
+        }
+
+        bytes memory transferData = abi.encodeWithSelector(
+            IERC20.transferFrom.selector,
+            subscription.subscriber,
+            subscription.merchant,
+            merchantAmount
+        );
+
+        bool merchantTransferSuccess = _callToken(address(pyusd), transferData);
+        if (!merchantTransferSuccess) {
+            return (false, "Merchant transfer failed");
+        }
+
+        bytes memory feeTransferData = abi.encodeWithSelector(
+            IERC20.transferFrom.selector,
+            subscription.subscriber,
+            msg.sender,
+            fee
+        );
+
+        bool feeTransferSuccess = _callToken(address(pyusd), feeTransferData);
+        if (!feeTransferSuccess) {
+            return (false, "Fee transfer failed");
+        }
+
+        return (true, "");
+    }
+
+    function _callToken(address token, bytes memory data) internal returns (bool) {
+        (bool success, bytes memory returndata) = token.call(data);
+        if (!success) {
+            return false;
+        }
+
+        if (returndata.length == 0) {
+            return true;
+        }
+
+        return abi.decode(returndata, (bool));
     }
 }

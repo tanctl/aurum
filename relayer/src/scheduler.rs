@@ -1,36 +1,47 @@
 use crate::blockchain::BlockchainClient;
+use crate::database::models::{ExecutionRecord, Subscription, SubscriptionStatus};
 use crate::database::queries::Queries;
-use crate::database::models::{Subscription, SubscriptionStatus, ExecutionRecord};
 use crate::error::{RelayerError, Result};
 use chrono::Utc;
 use ethers::types::{H256, U256};
+use sqlx::{PgPool, Row};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_cron_scheduler::{Job, JobScheduler};
-use tracing::{error, info, warn, debug};
-use sqlx::{PgPool, Row};
+use tracing::{debug, error, info, warn};
 
 // secure subscription id conversion - only accepts contract-format hex strings
 // fixes critical security vulnerability: hash collision attack prevention
 fn subscription_id_to_bytes(id: &str) -> Result<[u8; 32]> {
     // validate format: must be 0x prefixed 64-character hex string (32 bytes)
     if !id.starts_with("0x") {
-        return Err(RelayerError::Validation("subscription id must start with 0x".to_string()));
+        return Err(RelayerError::Validation(
+            "subscription id must start with 0x".to_string(),
+        ));
     }
-    
-    if id.len() != 66 { // 0x + 64 hex chars = 66 total
-        return Err(RelayerError::Validation("subscription id must be exactly 66 characters (0x + 32 bytes hex)".to_string()));
+
+    if id.len() != 66 {
+        // 0x + 64 hex chars = 66 total
+        return Err(RelayerError::Validation(
+            "subscription id must be exactly 66 characters (0x + 32 bytes hex)".to_string(),
+        ));
     }
-    
+
     // validate hex characters only
     if !id[2..].chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(RelayerError::Validation("subscription id contains invalid hex characters".to_string()));
+        return Err(RelayerError::Validation(
+            "subscription id contains invalid hex characters".to_string(),
+        ));
     }
-    
+
     hex::decode(&id[2..])
-        .map_err(|e| RelayerError::Validation(format!("failed to decode subscription id hex: {}", e)))?
+        .map_err(|e| {
+            RelayerError::Validation(format!("failed to decode subscription id hex: {}", e))
+        })?
         .try_into()
-        .map_err(|_| RelayerError::Validation("subscription id must be exactly 32 bytes".to_string()))
+        .map_err(|_| {
+            RelayerError::Validation("subscription id must be exactly 32 bytes".to_string())
+        })
 }
 
 #[derive(Debug, Clone)]
@@ -72,14 +83,15 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub async fn new(
-        queries: Arc<Queries>, 
+        queries: Arc<Queries>,
         blockchain_client: Arc<BlockchainClient>,
-        pool: PgPool
+        pool: PgPool,
     ) -> Result<Self> {
         info!("initializing payment scheduler");
-        
-        let job_scheduler = JobScheduler::new().await
-            .map_err(|e| RelayerError::InternalError(format!("failed to create job scheduler: {}", e)))?;
+
+        let job_scheduler = JobScheduler::new().await.map_err(|e| {
+            RelayerError::InternalError(format!("failed to create job scheduler: {}", e))
+        })?;
 
         let mut scheduler = Self {
             queries,
@@ -89,7 +101,7 @@ impl Scheduler {
         };
 
         scheduler.setup_payment_job().await?;
-        
+
         info!("payment scheduler initialized successfully");
         Ok(scheduler)
     }
@@ -104,68 +116,81 @@ impl Scheduler {
             let queries = Arc::clone(&queries);
             let blockchain_client = Arc::clone(&blockchain_client);
             let pool = pool.clone();
-            
+
             Box::pin(async move {
                 info!("starting payment processing cycle with distributed lock");
-                
+
                 // implement distributed locking to prevent concurrent execution
                 match acquire_processing_lock(&pool).await {
                     Ok(lock_acquired) => {
                         if lock_acquired {
                             info!("acquired processing lock, starting payment processing");
-                            
+
                             // set processing timeout
                             let processing_result = tokio::time::timeout(
                                 Duration::from_secs(MAX_PROCESSING_TIME_SECONDS),
-                                process_payments_job_safe(queries, blockchain_client, pool.clone())
-                            ).await;
-                            
+                                process_payments_job_safe(queries, blockchain_client, pool.clone()),
+                            )
+                            .await;
+
                             match processing_result {
                                 Ok(Ok(())) => info!("payment processing completed successfully"),
                                 Ok(Err(e)) => error!("payment processing failed: {}", e),
-                                Err(_) => error!("payment processing timed out after {} seconds", MAX_PROCESSING_TIME_SECONDS),
+                                Err(_) => error!(
+                                    "payment processing timed out after {} seconds",
+                                    MAX_PROCESSING_TIME_SECONDS
+                                ),
                             }
-                            
+
                             // always release lock
                             if let Err(e) = release_processing_lock(&pool).await {
                                 error!("failed to release processing lock: {}", e);
                             }
                         } else {
-                            debug!("processing lock already held by another instance, skipping cycle");
+                            debug!(
+                                "processing lock already held by another instance, skipping cycle"
+                            );
                         }
                     }
                     Err(e) => error!("failed to acquire processing lock: {}", e),
                 }
-                
+
                 info!("payment processing cycle completed");
             })
-        }).map_err(|e| RelayerError::InternalError(format!("failed to create payment job: {}", e)))?;
+        })
+        .map_err(|e| RelayerError::InternalError(format!("failed to create payment job: {}", e)))?;
 
-        self.job_scheduler.add(job).await
-            .map_err(|e| RelayerError::InternalError(format!("failed to add payment job: {}", e)))?;
+        self.job_scheduler.add(job).await.map_err(|e| {
+            RelayerError::InternalError(format!("failed to add payment job: {}", e))
+        })?;
 
         Ok(())
     }
 
     pub async fn start(&self) -> Result<()> {
         info!("starting payment scheduler");
-        self.job_scheduler.start().await
-            .map_err(|e| RelayerError::InternalError(format!("failed to start scheduler: {}", e)))?;
+        self.job_scheduler.start().await.map_err(|e| {
+            RelayerError::InternalError(format!("failed to start scheduler: {}", e))
+        })?;
         Ok(())
     }
 
     pub async fn stop(&mut self) -> Result<()> {
         info!("stopping payment scheduler");
-        self.job_scheduler.shutdown().await
+        self.job_scheduler
+            .shutdown()
+            .await
             .map_err(|e| RelayerError::InternalError(format!("failed to stop scheduler: {}", e)))?;
         Ok(())
     }
 
-
     #[allow(dead_code)]
     async fn process_due_payments(&self) -> Result<()> {
         let due_subscriptions = self.queries.get_due_subscriptions().await?;
-        info!("found {} due subscriptions to process", due_subscriptions.len());
+        info!(
+            "found {} due subscriptions to process",
+            due_subscriptions.len()
+        );
 
         for subscription in due_subscriptions {
             if let Err(e) = self.process_single_subscription(&subscription).await {
@@ -179,29 +204,44 @@ impl Scheduler {
 
     #[allow(dead_code)]
     async fn process_single_subscription(&self, subscription: &Subscription) -> Result<()> {
-        info!("processing subscription {} for subscriber {}", 
-              subscription.id, subscription.subscriber);
+        info!(
+            "processing subscription {} for subscriber {}",
+            subscription.id, subscription.subscriber
+        );
 
         let validation_result = self.validate_payment(subscription).await?;
-        
+
         match validation_result {
             ValidationResult::Valid => {
-                info!("subscription {} validation passed, executing payment", subscription.id);
-                
+                info!(
+                    "subscription {} validation passed, executing payment",
+                    subscription.id
+                );
+
                 let execution_result = self.execute_payment_on_chain(subscription).await?;
-                
-                self.record_successful_execution(subscription, &execution_result).await?;
-                
-                info!("successfully executed payment for subscription {}, tx: {:?}", 
-                      subscription.id, execution_result.transaction_hash);
+
+                self.record_successful_execution(subscription, &execution_result)
+                    .await?;
+
+                info!(
+                    "successfully executed payment for subscription {}, tx: {:?}",
+                    subscription.id, execution_result.transaction_hash
+                );
             }
             ValidationResult::InsufficientBalance => {
                 warn!("subscription {} has insufficient balance", subscription.id);
-                return Err(RelayerError::Validation("insufficient subscriber balance".to_string()));
+                return Err(RelayerError::Validation(
+                    "insufficient subscriber balance".to_string(),
+                ));
             }
             ValidationResult::InsufficientAllowance => {
-                warn!("subscription {} has insufficient allowance", subscription.id);
-                return Err(RelayerError::Validation("insufficient subscriber allowance".to_string()));
+                warn!(
+                    "subscription {} has insufficient allowance",
+                    subscription.id
+                );
+                return Err(RelayerError::Validation(
+                    "insufficient subscriber allowance".to_string(),
+                ));
             }
             ValidationResult::NotDue => {
                 info!("subscription {} is not due yet", subscription.id);
@@ -209,11 +249,15 @@ impl Scheduler {
             }
             ValidationResult::SubscriptionNotActive => {
                 warn!("subscription {} is not active", subscription.id);
-                return Err(RelayerError::Validation("subscription not active".to_string()));
+                return Err(RelayerError::Validation(
+                    "subscription not active".to_string(),
+                ));
             }
             ValidationResult::SubscriptionNotFound => {
                 warn!("subscription {} not found on chain", subscription.id);
-                return Err(RelayerError::NotFound("subscription not found on chain".to_string()));
+                return Err(RelayerError::NotFound(
+                    "subscription not found on chain".to_string(),
+                ));
             }
             ValidationResult::ChainError(msg) => {
                 error!("chain error for subscription {}: {}", subscription.id, msg);
@@ -230,7 +274,9 @@ impl Scheduler {
 
         // validate subscription id format first
         if subscription.id.len() > MAX_ID_LENGTH {
-            return Err(RelayerError::Validation("subscription id too long".to_string()));
+            return Err(RelayerError::Validation(
+                "subscription id too long".to_string(),
+            ));
         }
 
         let chain = &subscription.chain;
@@ -239,12 +285,24 @@ impl Scheduler {
         // get current blockchain state with timeout
         let on_chain_subscription = match tokio::time::timeout(
             Duration::from_secs(30),
-            self.blockchain_client.get_subscription(subscription_id_bytes, chain)
-        ).await {
+            self.blockchain_client
+                .get_subscription(subscription_id_bytes, chain),
+        )
+        .await
+        {
             Ok(Ok(Some(sub))) => sub,
             Ok(Ok(None)) => return Ok(ValidationResult::SubscriptionNotFound),
-            Ok(Err(e)) => return Ok(ValidationResult::ChainError(format!("blockchain error: {}", e))),
-            Err(_) => return Ok(ValidationResult::ChainError("blockchain request timeout".to_string())),
+            Ok(Err(e)) => {
+                return Ok(ValidationResult::ChainError(format!(
+                    "blockchain error: {}",
+                    e
+                )))
+            }
+            Err(_) => {
+                return Ok(ValidationResult::ChainError(
+                    "blockchain request timeout".to_string(),
+                ))
+            }
         };
 
         // validate contract status (0 = ACTIVE)
@@ -254,8 +312,13 @@ impl Scheduler {
 
         // check nonce consistency between database and contract
         if subscription.nonce != on_chain_subscription.nonce.as_u64() as i64 {
-            warn!("nonce mismatch: db={}, chain={}", subscription.nonce, on_chain_subscription.nonce);
-            return Ok(ValidationResult::ChainError("subscription nonce mismatch - possible replay attack".to_string()));
+            warn!(
+                "nonce mismatch: db={}, chain={}",
+                subscription.nonce, on_chain_subscription.nonce
+            );
+            return Ok(ValidationResult::ChainError(
+                "subscription nonce mismatch - possible replay attack".to_string(),
+            ));
         }
 
         // check if subscription has expired
@@ -265,57 +328,88 @@ impl Scheduler {
         }
 
         // check if max payments reached (use contract state as source of truth)
-        let on_chain_payments = self.blockchain_client
-            .get_payment_count(subscription_id_bytes, chain).await
-            .map_err(|e| RelayerError::ContractRevert(format!("failed to get payment count: {}", e)))?;
-            
+        let on_chain_payments = self
+            .blockchain_client
+            .get_payment_count(subscription_id_bytes, chain)
+            .await
+            .map_err(|e| {
+                RelayerError::ContractRevert(format!("failed to get payment count: {}", e))
+            })?;
+
         if on_chain_payments >= on_chain_subscription.max_payments.as_u64() {
             return Ok(ValidationResult::SubscriptionNotActive);
         }
 
         // secure arithmetic with overflow protection
-        let payment_amount: U256 = subscription.amount.parse()
-            .map_err(|_| RelayerError::Validation("invalid payment amount in subscription".to_string()))?;
-        
+        let payment_amount: U256 = subscription.amount.parse().map_err(|_| {
+            RelayerError::Validation("invalid payment amount in subscription".to_string())
+        })?;
+
         // calculate total paid from contract state
-        let contract_total_paid = payment_amount.checked_mul(U256::from(on_chain_payments))
-            .ok_or_else(|| RelayerError::Validation("payment amount calculation overflow".to_string()))?;
-            
+        let contract_total_paid = payment_amount
+            .checked_mul(U256::from(on_chain_payments))
+            .ok_or_else(|| {
+                RelayerError::Validation("payment amount calculation overflow".to_string())
+            })?;
+
         let max_total: U256 = on_chain_subscription.max_total_amount;
-        
+
         // check if next payment would exceed total limit
-        let next_total = contract_total_paid.checked_add(payment_amount)
-            .ok_or_else(|| RelayerError::Validation("total payment calculation overflow".to_string()))?;
-            
+        let next_total = contract_total_paid
+            .checked_add(payment_amount)
+            .ok_or_else(|| {
+                RelayerError::Validation("total payment calculation overflow".to_string())
+            })?;
+
         if next_total > max_total {
             return Ok(ValidationResult::SubscriptionNotActive);
         }
 
         // check payment timing (contract is source of truth)
-        let contract_next_payment = on_chain_subscription.start_time + (U256::from(on_chain_payments) * on_chain_subscription.interval);
+        let contract_next_payment = on_chain_subscription.start_time
+            + (U256::from(on_chain_payments) * on_chain_subscription.interval);
         let current_timestamp = now.timestamp() as u64;
-        
+
         if U256::from(current_timestamp) < contract_next_payment {
             return Ok(ValidationResult::NotDue);
         }
 
-        let subscriber_address = subscription.subscriber.parse()
+        let subscriber_address = subscription
+            .subscriber
+            .parse()
             .map_err(|_| RelayerError::Validation("invalid subscriber address".to_string()))?;
 
         // check balance with timeout
         let balance = match tokio::time::timeout(
             Duration::from_secs(15),
-            self.blockchain_client.check_balance(subscriber_address, chain)
-        ).await {
+            self.blockchain_client
+                .check_balance(subscriber_address, chain),
+        )
+        .await
+        {
             Ok(Ok(bal)) => bal,
-            Ok(Err(e)) => return Ok(ValidationResult::ChainError(format!("balance check failed: {}", e))),
-            Err(_) => return Ok(ValidationResult::ChainError("balance check timeout".to_string())),
+            Ok(Err(e)) => {
+                return Ok(ValidationResult::ChainError(format!(
+                    "balance check failed: {}",
+                    e
+                )))
+            }
+            Err(_) => {
+                return Ok(ValidationResult::ChainError(
+                    "balance check timeout".to_string(),
+                ))
+            }
         };
 
         // verify amounts match between database and chain (critical security check)
         if payment_amount != on_chain_subscription.amount {
-            error!("critical: amount mismatch detected - db={}, chain={}", payment_amount, on_chain_subscription.amount);
-            return Ok(ValidationResult::ChainError("subscription amount mismatch between database and chain".to_string()));
+            error!(
+                "critical: amount mismatch detected - db={}, chain={}",
+                payment_amount, on_chain_subscription.amount
+            );
+            return Ok(ValidationResult::ChainError(
+                "subscription amount mismatch between database and chain".to_string(),
+            ));
         }
 
         if balance < payment_amount {
@@ -325,24 +419,45 @@ impl Scheduler {
         // check allowance with timeout
         let has_allowance = match tokio::time::timeout(
             Duration::from_secs(15),
-            self.blockchain_client.check_allowance(subscriber_address, payment_amount, chain)
-        ).await {
+            self.blockchain_client
+                .check_allowance(subscriber_address, payment_amount, chain),
+        )
+        .await
+        {
             Ok(Ok(allowance)) => allowance,
-            Ok(Err(e)) => return Ok(ValidationResult::ChainError(format!("allowance check failed: {}", e))),
-            Err(_) => return Ok(ValidationResult::ChainError("allowance check timeout".to_string())),
+            Ok(Err(e)) => {
+                return Ok(ValidationResult::ChainError(format!(
+                    "allowance check failed: {}",
+                    e
+                )))
+            }
+            Err(_) => {
+                return Ok(ValidationResult::ChainError(
+                    "allowance check timeout".to_string(),
+                ))
+            }
         };
 
         if !has_allowance {
             return Ok(ValidationResult::InsufficientAllowance);
         }
 
-        info!("subscription {} validation completed successfully", subscription.id);
+        info!(
+            "subscription {} validation completed successfully",
+            subscription.id
+        );
         Ok(ValidationResult::Valid)
     }
 
     #[allow(dead_code)]
-    async fn execute_payment_on_chain(&self, subscription: &Subscription) -> Result<ExecutionResult> {
-        info!("executing payment on chain for subscription {}", subscription.id);
+    async fn execute_payment_on_chain(
+        &self,
+        subscription: &Subscription,
+    ) -> Result<ExecutionResult> {
+        info!(
+            "executing payment on chain for subscription {}",
+            subscription.id
+        );
 
         let chain = &subscription.chain;
         let subscription_id_bytes = subscription_id_to_bytes(&subscription.id)?;
@@ -353,22 +468,38 @@ impl Scheduler {
         while retry_count < MAX_RETRY_ATTEMPTS {
             match tokio::time::timeout(
                 Duration::from_secs(120), // 2 minute timeout per attempt
-                self.blockchain_client.execute_subscription(subscription_id_bytes, chain)
-            ).await {
+                self.blockchain_client
+                    .execute_subscription(subscription_id_bytes, chain),
+            )
+            .await
+            {
                 Ok(Ok(result)) => {
-                    let payment_amount: U256 = subscription.amount.parse()
-                        .map_err(|_| RelayerError::Validation("invalid payment amount".to_string()))?;
-                    
+                    let payment_amount: U256 = subscription.amount.parse().map_err(|_| {
+                        RelayerError::Validation("invalid payment amount".to_string())
+                    })?;
+
                     // calculate correct protocol fee based on payment amount, not gas
-                    let protocol_fee = payment_amount.checked_mul(U256::from(PROTOCOL_FEE_BPS))
+                    let protocol_fee = payment_amount
+                        .checked_mul(U256::from(PROTOCOL_FEE_BPS))
                         .and_then(|fee| fee.checked_div(U256::from(10000)))
-                        .ok_or_else(|| RelayerError::Validation("protocol fee calculation overflow".to_string()))?;
-                    
+                        .ok_or_else(|| {
+                            RelayerError::Validation(
+                                "protocol fee calculation overflow".to_string(),
+                            )
+                        })?;
+
                     // get current payment number from blockchain (source of truth)
-                    let current_payment_number = self.blockchain_client
-                        .get_payment_count(subscription_id_bytes, chain).await
-                        .map_err(|e| RelayerError::ContractRevert(format!("failed to get payment count: {}", e)))?;
-                    
+                    let current_payment_number = self
+                        .blockchain_client
+                        .get_payment_count(subscription_id_bytes, chain)
+                        .await
+                        .map_err(|e| {
+                            RelayerError::ContractRevert(format!(
+                                "failed to get payment count: {}",
+                                e
+                            ))
+                        })?;
+
                     let execution_result = ExecutionResult {
                         transaction_hash: result.transaction_hash,
                         block_number: result.block_number,
@@ -379,70 +510,91 @@ impl Scheduler {
                         payment_number: current_payment_number,
                     };
 
-                    info!("payment executed successfully on attempt {}, tx: {:?}, payment #{}", 
-                          retry_count + 1, result.transaction_hash, current_payment_number);
-                    
+                    info!(
+                        "payment executed successfully on attempt {}, tx: {:?}, payment #{}",
+                        retry_count + 1,
+                        result.transaction_hash,
+                        current_payment_number
+                    );
+
                     return Ok(execution_result);
                 }
                 Ok(Err(e)) => {
                     retry_count += 1;
                     last_error = Some(e);
-                    
+
                     // intelligent retry logic based on error type
                     let should_retry = match last_error.as_ref().unwrap() {
                         RelayerError::RpcConnectionFailed(_) => true,
                         RelayerError::InsufficientGas(_) => true,
                         RelayerError::TransactionFailed(msg) => {
                             // don't retry permanent failures
-                            !msg.to_lowercase().contains("nonce") && 
-                            !msg.to_lowercase().contains("insufficient") &&
-                            !msg.to_lowercase().contains("revert")
-                        },
+                            !msg.to_lowercase().contains("nonce")
+                                && !msg.to_lowercase().contains("insufficient")
+                                && !msg.to_lowercase().contains("revert")
+                        }
                         RelayerError::ContractRevert(_) => false, // permanent failure
-                        _ => retry_count < 2, // retry once for unknown errors
+                        _ => retry_count < 2,                     // retry once for unknown errors
                     };
-                    
+
                     if !should_retry || retry_count >= MAX_RETRY_ATTEMPTS {
-                        warn!("permanent error or max retries reached, not retrying: {}", 
-                              last_error.as_ref().unwrap());
+                        warn!(
+                            "permanent error or max retries reached, not retrying: {}",
+                            last_error.as_ref().unwrap()
+                        );
                         break;
                     }
-                    
+
                     // exponential backoff with jitter
                     let backoff_seconds = BASE_RETRY_DELAY_SECONDS * (2_u64.pow(retry_count - 1));
                     let jitter = fastrand::u64(0..=backoff_seconds / 4); // up to 25% jitter
                     let final_delay = backoff_seconds + jitter;
-                    
-                    warn!("execution failed on attempt {}, retrying in {} seconds: {}", 
-                          retry_count, final_delay, last_error.as_ref().unwrap());
-                    
+
+                    warn!(
+                        "execution failed on attempt {}, retrying in {} seconds: {}",
+                        retry_count,
+                        final_delay,
+                        last_error.as_ref().unwrap()
+                    );
+
                     tokio::time::sleep(Duration::from_secs(final_delay)).await;
                 }
                 Err(_) => {
                     retry_count += 1;
-                    last_error = Some(RelayerError::InternalError("blockchain request timeout".to_string()));
-                    
+                    last_error = Some(RelayerError::InternalError(
+                        "blockchain request timeout".to_string(),
+                    ));
+
                     if retry_count < MAX_RETRY_ATTEMPTS {
-                        let backoff_seconds = BASE_RETRY_DELAY_SECONDS * (2_u64.pow(retry_count - 1));
-                        warn!("execution timeout on attempt {}, retrying in {} seconds", 
-                              retry_count, backoff_seconds);
+                        let backoff_seconds =
+                            BASE_RETRY_DELAY_SECONDS * (2_u64.pow(retry_count - 1));
+                        warn!(
+                            "execution timeout on attempt {}, retrying in {} seconds",
+                            retry_count, backoff_seconds
+                        );
                         tokio::time::sleep(Duration::from_secs(backoff_seconds)).await;
                     }
                 }
             }
         }
 
-        error!("payment execution failed after {} attempts", MAX_RETRY_ATTEMPTS);
+        error!(
+            "payment execution failed after {} attempts",
+            MAX_RETRY_ATTEMPTS
+        );
         Err(last_error.unwrap())
     }
 
     #[allow(dead_code)]
     async fn record_successful_execution(
-        &self, 
-        subscription: &Subscription, 
-        execution_result: &ExecutionResult
+        &self,
+        subscription: &Subscription,
+        execution_result: &ExecutionResult,
     ) -> Result<()> {
-        info!("recording successful execution for subscription {}", subscription.id);
+        info!(
+            "recording successful execution for subscription {}",
+            subscription.id
+        );
 
         let execution_record = ExecutionRecord {
             id: 0,
@@ -458,20 +610,25 @@ impl Scheduler {
             executed_at: Utc::now(),
         };
 
-        self.queries.insert_execution_record(&execution_record).await?;
+        self.queries
+            .insert_execution_record(&execution_record)
+            .await?;
 
-        let new_payments_made = subscription.executed_payments
-        .checked_add(1)
-        .ok_or_else(|| RelayerError::InternalError("payment count overflow".to_string()))?;
-        let next_payment_time = subscription.next_payment_due + 
-            chrono::Duration::seconds(subscription.interval_seconds);
+        let new_payments_made = subscription
+            .executed_payments
+            .checked_add(1)
+            .ok_or_else(|| RelayerError::InternalError("payment count overflow".to_string()))?;
+        let next_payment_time = subscription.next_payment_due
+            + chrono::Duration::seconds(subscription.interval_seconds);
 
-        self.queries.update_subscription_after_payment(
-            &subscription.id,
-            new_payments_made,
-            next_payment_time,
-            0
-        ).await?;
+        self.queries
+            .update_subscription_after_payment(
+                &subscription.id,
+                new_payments_made,
+                next_payment_time,
+                0,
+            )
+            .await?;
 
         info!("execution record saved, subscription updated for next payment");
         Ok(())
@@ -479,29 +636,35 @@ impl Scheduler {
 
     #[allow(dead_code)]
     async fn handle_subscription_failure(
-        &self, 
-        subscription: &Subscription, 
-        error: &RelayerError
+        &self,
+        subscription: &Subscription,
+        error: &RelayerError,
     ) -> Result<()> {
         let new_failure_count = subscription.failure_count + 1;
-        
-        warn!("subscription {} failed (attempt {}): {}", 
-              subscription.id, new_failure_count, error);
+
+        warn!(
+            "subscription {} failed (attempt {}): {}",
+            subscription.id, new_failure_count, error
+        );
 
         if new_failure_count > 3 {
-            warn!("subscription {} exceeded maximum failures, pausing", subscription.id);
-            
-            self.queries.update_subscription_status_enum(
-                &subscription.id, 
-                SubscriptionStatus::Paused
-            ).await?;
+            warn!(
+                "subscription {} exceeded maximum failures, pausing",
+                subscription.id
+            );
+
+            self.queries
+                .update_subscription_status_enum(&subscription.id, SubscriptionStatus::Paused)
+                .await?;
         } else {
-            self.queries.update_subscription_after_payment(
-                &subscription.id,
-                subscription.executed_payments,
-                subscription.next_payment_due,
-                new_failure_count,
-            ).await?;
+            self.queries
+                .update_subscription_after_payment(
+                    &subscription.id,
+                    subscription.executed_payments,
+                    subscription.next_payment_due,
+                    new_failure_count,
+                )
+                .await?;
         }
 
         Ok(())
@@ -514,7 +677,7 @@ async fn acquire_processing_lock(pool: &PgPool) -> Result<bool> {
         .fetch_one(pool)
         .await
         .map_err(|e| RelayerError::DatabaseError(format!("failed to acquire lock: {}", e)))?;
-    
+
     let acquired: bool = result.get("acquired");
     Ok(acquired)
 }
@@ -524,7 +687,7 @@ async fn release_processing_lock(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await
         .map_err(|e| RelayerError::DatabaseError(format!("failed to release lock: {}", e)))?;
-    
+
     Ok(())
 }
 
@@ -532,33 +695,49 @@ async fn release_processing_lock(pool: &PgPool) -> Result<()> {
 async fn process_payments_job_safe(
     queries: Arc<Queries>,
     blockchain_client: Arc<BlockchainClient>,
-    pool: PgPool
+    pool: PgPool,
 ) -> Result<()> {
     info!("starting safe payment processing with resource limits");
-    
+
     // process subscriptions in batches to prevent memory exhaustion
     let mut offset = 0;
     let mut total_processed = 0;
-    
+
     loop {
         // get limited batch of due subscriptions
-        let due_subscriptions = queries.get_due_subscriptions_with_limit(MAX_SUBSCRIPTIONS_PER_BATCH, offset).await?;
-        
+        let due_subscriptions = queries
+            .get_due_subscriptions_with_limit(MAX_SUBSCRIPTIONS_PER_BATCH, offset)
+            .await?;
+
         if due_subscriptions.is_empty() {
             info!("no more due subscriptions to process");
             break;
         }
-        
-        info!("processing batch of {} subscriptions (offset: {})", due_subscriptions.len(), offset);
-        
+
+        info!(
+            "processing batch of {} subscriptions (offset: {})",
+            due_subscriptions.len(),
+            offset
+        );
+
         for subscription in due_subscriptions {
             // validate subscription id length for DoS protection
             if subscription.id.len() > MAX_ID_LENGTH {
-                warn!("skipping subscription with oversized id: {}", subscription.id.len());
+                warn!(
+                    "skipping subscription with oversized id: {}",
+                    subscription.id.len()
+                );
                 continue;
             }
-            
-            match process_single_subscription_job_safe(&subscription, &queries, &blockchain_client, &pool).await {
+
+            match process_single_subscription_job_safe(
+                &subscription,
+                &queries,
+                &blockchain_client,
+                &pool,
+            )
+            .await
+            {
                 Ok(processed) => {
                     if processed {
                         total_processed += 1;
@@ -566,23 +745,28 @@ async fn process_payments_job_safe(
                 }
                 Err(e) => {
                     error!("failed to process subscription {}: {}", subscription.id, e);
-                    if let Err(failure_err) = handle_subscription_failure_job_safe(&subscription, &e, &queries).await {
+                    if let Err(failure_err) =
+                        handle_subscription_failure_job_safe(&subscription, &e, &queries).await
+                    {
                         error!("failed to handle subscription failure: {}", failure_err);
                     }
                 }
             }
         }
-        
+
         offset += MAX_SUBSCRIPTIONS_PER_BATCH;
-        
+
         // safety limit: don't process more than 1000 subscriptions per cycle
         if total_processed >= 1000 {
             warn!("reached maximum subscriptions per cycle limit (1000), stopping");
             break;
         }
     }
-    
-    info!("completed safe payment processing, processed {} subscriptions", total_processed);
+
+    info!(
+        "completed safe payment processing, processed {} subscriptions",
+        total_processed
+    );
     Ok(())
 }
 
@@ -590,55 +774,77 @@ async fn process_single_subscription_job_safe(
     subscription: &Subscription,
     queries: &Arc<Queries>,
     blockchain_client: &Arc<BlockchainClient>,
-    pool: &PgPool
+    pool: &PgPool,
 ) -> Result<bool> {
-    info!("processing subscription {} for subscriber {}", 
-          subscription.id, subscription.subscriber);
+    info!(
+        "processing subscription {} for subscriber {}",
+        subscription.id, subscription.subscriber
+    );
 
     // acquire row-level lock to prevent concurrent processing of same subscription
-    let lock_result = sqlx::query(
-        "SELECT id FROM subscriptions WHERE id = $1 FOR UPDATE NOWAIT"
-    )
-    .bind(&subscription.id)
-    .fetch_optional(pool).await;
-    
+    let lock_result = sqlx::query("SELECT id FROM subscriptions WHERE id = $1 FOR UPDATE NOWAIT")
+        .bind(&subscription.id)
+        .fetch_optional(pool)
+        .await;
+
     match lock_result {
         Ok(Some(_)) => {
             debug!("acquired row lock for subscription {}", subscription.id);
         }
         Ok(None) => {
-            warn!("subscription {} no longer exists, skipping", subscription.id);
+            warn!(
+                "subscription {} no longer exists, skipping",
+                subscription.id
+            );
             return Ok(false);
         }
-        Err(sqlx::Error::Database(db_err)) if db_err.code() == Some(std::borrow::Cow::Borrowed("55P03")) => {
-            debug!("subscription {} is being processed by another instance, skipping", subscription.id);
+        Err(sqlx::Error::Database(db_err))
+            if db_err.code() == Some(std::borrow::Cow::Borrowed("55P03")) =>
+        {
+            debug!(
+                "subscription {} is being processed by another instance, skipping",
+                subscription.id
+            );
             return Ok(false);
         }
         Err(e) => return Err(RelayerError::Database(e)),
     }
 
     let validation_result = validate_payment_job_safe(subscription, blockchain_client).await?;
-    
+
     match validation_result {
         ValidationResult::Valid => {
-            info!("subscription {} validation passed, executing payment", subscription.id);
-            
-            let execution_result = execute_payment_on_chain_job_safe(subscription, blockchain_client).await?;
-            
+            info!(
+                "subscription {} validation passed, executing payment",
+                subscription.id
+            );
+
+            let execution_result =
+                execute_payment_on_chain_job_safe(subscription, blockchain_client).await?;
+
             record_successful_execution_job_safe(subscription, &execution_result, queries).await?;
-            
-            info!("successfully executed payment for subscription {}, tx: {:?}", 
-                  subscription.id, execution_result.transaction_hash);
-                  
+
+            info!(
+                "successfully executed payment for subscription {}, tx: {:?}",
+                subscription.id, execution_result.transaction_hash
+            );
+
             return Ok(true); // payment processed
         }
         ValidationResult::InsufficientBalance => {
             warn!("subscription {} has insufficient balance", subscription.id);
-            return Err(RelayerError::Validation("insufficient subscriber balance".to_string()));
+            return Err(RelayerError::Validation(
+                "insufficient subscriber balance".to_string(),
+            ));
         }
         ValidationResult::InsufficientAllowance => {
-            warn!("subscription {} has insufficient allowance", subscription.id);
-            return Err(RelayerError::Validation("insufficient subscriber allowance".to_string()));
+            warn!(
+                "subscription {} has insufficient allowance",
+                subscription.id
+            );
+            return Err(RelayerError::Validation(
+                "insufficient subscriber allowance".to_string(),
+            ));
         }
         ValidationResult::NotDue => {
             debug!("subscription {} is not due yet", subscription.id);
@@ -646,11 +852,15 @@ async fn process_single_subscription_job_safe(
         }
         ValidationResult::SubscriptionNotActive => {
             warn!("subscription {} is not active", subscription.id);
-            return Err(RelayerError::Validation("subscription not active".to_string()));
+            return Err(RelayerError::Validation(
+                "subscription not active".to_string(),
+            ));
         }
         ValidationResult::SubscriptionNotFound => {
             warn!("subscription {} not found on chain", subscription.id);
-            return Err(RelayerError::NotFound("subscription not found on chain".to_string()));
+            return Err(RelayerError::NotFound(
+                "subscription not found on chain".to_string(),
+            ));
         }
         ValidationResult::ChainError(msg) => {
             error!("chain error for subscription {}: {}", subscription.id, msg);
@@ -661,13 +871,15 @@ async fn process_single_subscription_job_safe(
 
 async fn validate_payment_job_safe(
     subscription: &Subscription,
-    blockchain_client: &Arc<BlockchainClient>
+    blockchain_client: &Arc<BlockchainClient>,
 ) -> Result<ValidationResult> {
     info!("validating payment for subscription {}", subscription.id);
 
     // validate subscription id format first
     if subscription.id.len() > MAX_ID_LENGTH {
-        return Err(RelayerError::Validation("subscription id too long".to_string()));
+        return Err(RelayerError::Validation(
+            "subscription id too long".to_string(),
+        ));
     }
 
     let chain = &subscription.chain;
@@ -676,12 +888,23 @@ async fn validate_payment_job_safe(
     // get current blockchain state with timeout
     let on_chain_subscription = match tokio::time::timeout(
         Duration::from_secs(30),
-        blockchain_client.get_subscription(subscription_id_bytes, chain)
-    ).await {
+        blockchain_client.get_subscription(subscription_id_bytes, chain),
+    )
+    .await
+    {
         Ok(Ok(Some(sub))) => sub,
         Ok(Ok(None)) => return Ok(ValidationResult::SubscriptionNotFound),
-        Ok(Err(e)) => return Ok(ValidationResult::ChainError(format!("blockchain error: {}", e))),
-        Err(_) => return Ok(ValidationResult::ChainError("blockchain request timeout".to_string())),
+        Ok(Err(e)) => {
+            return Ok(ValidationResult::ChainError(format!(
+                "blockchain error: {}",
+                e
+            )))
+        }
+        Err(_) => {
+            return Ok(ValidationResult::ChainError(
+                "blockchain request timeout".to_string(),
+            ))
+        }
     };
 
     if on_chain_subscription.status != 0 {
@@ -699,46 +922,62 @@ async fn validate_payment_job_safe(
         return Ok(ValidationResult::SubscriptionNotActive);
     }
 
-    // secure arithmetic with overflow protection  
-    let payment_amount: U256 = subscription.amount.parse()
-        .map_err(|_| RelayerError::Validation("invalid payment amount in subscription".to_string()))?;
-    
+    // secure arithmetic with overflow protection
+    let payment_amount: U256 = subscription.amount.parse().map_err(|_| {
+        RelayerError::Validation("invalid payment amount in subscription".to_string())
+    })?;
+
     // get payment count from contract (source of truth)
     let on_chain_payments = blockchain_client
-        .get_payment_count(subscription_id_bytes, chain).await
+        .get_payment_count(subscription_id_bytes, chain)
+        .await
         .map_err(|e| RelayerError::ContractRevert(format!("failed to get payment count: {}", e)))?;
-        
+
     // calculate total paid from contract state
-    let contract_total_paid = payment_amount.checked_mul(U256::from(on_chain_payments))
-        .ok_or_else(|| RelayerError::Validation("payment amount calculation overflow".to_string()))?;
-        
+    let contract_total_paid = payment_amount
+        .checked_mul(U256::from(on_chain_payments))
+        .ok_or_else(|| {
+            RelayerError::Validation("payment amount calculation overflow".to_string())
+        })?;
+
     let max_total: U256 = on_chain_subscription.max_total_amount;
-    
+
     // check if next payment would exceed total limit
-    let next_total = contract_total_paid.checked_add(payment_amount)
-        .ok_or_else(|| RelayerError::Validation("total payment calculation overflow".to_string()))?;
-        
+    let next_total = contract_total_paid
+        .checked_add(payment_amount)
+        .ok_or_else(|| {
+            RelayerError::Validation("total payment calculation overflow".to_string())
+        })?;
+
     if next_total > max_total {
         return Ok(ValidationResult::SubscriptionNotActive);
     }
 
     let next_payment_time = subscription.next_payment_due;
-    
+
     if now < next_payment_time {
         return Ok(ValidationResult::NotDue);
     }
 
-    let subscriber_address = subscription.subscriber.parse()
+    let subscriber_address = subscription
+        .subscriber
+        .parse()
         .map_err(|_| RelayerError::Validation("invalid subscriber address".to_string()))?;
 
     let balance = blockchain_client
-        .check_balance(subscriber_address, chain).await
+        .check_balance(subscriber_address, chain)
+        .await
         .map_err(|e| RelayerError::ContractRevert(format!("failed to check balance: {}", e)))?;
 
     // verify amounts match between database and chain
     if payment_amount != on_chain_subscription.amount {
-        warn!("amount mismatch: db={}, chain={}", payment_amount, on_chain_subscription.amount);
-        return Ok(ValidationResult::ChainError("subscription amount mismatch between database and chain".to_string()));
+        warn!(
+            "amount mismatch: db={}, chain={}",
+            payment_amount, on_chain_subscription.amount
+        );
+        return Ok(ValidationResult::ChainError(
+            "subscription amount mismatch between database and chain".to_string(),
+        ));
     }
 
     if balance < payment_amount {
@@ -746,22 +985,29 @@ async fn validate_payment_job_safe(
     }
 
     let has_allowance = blockchain_client
-        .check_allowance(subscriber_address, payment_amount, chain).await
+        .check_allowance(subscriber_address, payment_amount, chain)
+        .await
         .map_err(|e| RelayerError::ContractRevert(format!("failed to check allowance: {}", e)))?;
 
     if !has_allowance {
         return Ok(ValidationResult::InsufficientAllowance);
     }
 
-    info!("subscription {} validation completed successfully", subscription.id);
+    info!(
+        "subscription {} validation completed successfully",
+        subscription.id
+    );
     Ok(ValidationResult::Valid)
 }
 
 async fn execute_payment_on_chain_job_safe(
     subscription: &Subscription,
-    blockchain_client: &Arc<BlockchainClient>
+    blockchain_client: &Arc<BlockchainClient>,
 ) -> Result<ExecutionResult> {
-    info!("executing payment on chain for subscription {}", subscription.id);
+    info!(
+        "executing payment on chain for subscription {}",
+        subscription.id
+    );
 
     let chain = &subscription.chain;
     let subscription_id_bytes = subscription_id_to_bytes(&subscription.id)?;
@@ -772,16 +1018,23 @@ async fn execute_payment_on_chain_job_safe(
 
     while retry_count < max_retries {
         match blockchain_client
-            .execute_subscription(subscription_id_bytes, chain).await {
+            .execute_subscription(subscription_id_bytes, chain)
+            .await
+        {
             Ok(result) => {
-                let payment_amount: U256 = subscription.amount.parse()
+                let payment_amount: U256 = subscription
+                    .amount
+                    .parse()
                     .map_err(|_| RelayerError::Validation("invalid payment amount".to_string()))?;
-                
+
                 // calculate correct protocol fee based on payment amount, not gas
-                let protocol_fee = payment_amount.checked_mul(U256::from(PROTOCOL_FEE_BPS))
+                let protocol_fee = payment_amount
+                    .checked_mul(U256::from(PROTOCOL_FEE_BPS))
                     .and_then(|fee| fee.checked_div(U256::from(10000)))
-                    .ok_or_else(|| RelayerError::Validation("protocol fee calculation overflow".to_string()))?;
-                
+                    .ok_or_else(|| {
+                        RelayerError::Validation("protocol fee calculation overflow".to_string())
+                    })?;
+
                 let execution_result = ExecutionResult {
                     transaction_hash: result.transaction_hash,
                     block_number: result.block_number,
@@ -792,15 +1045,18 @@ async fn execute_payment_on_chain_job_safe(
                     payment_number: (subscription.executed_payments + 1) as u64,
                 };
 
-                info!("payment executed successfully on attempt {}, tx: {:?}", 
-                      retry_count + 1, result.transaction_hash);
-                
+                info!(
+                    "payment executed successfully on attempt {}, tx: {:?}",
+                    retry_count + 1,
+                    result.transaction_hash
+                );
+
                 return Ok(execution_result);
             }
             Err(e) => {
                 retry_count += 1;
                 last_error = Some(e);
-                
+
                 // only retry on transient errors, not permanent ones
                 let should_retry = match last_error.as_ref().unwrap() {
                     RelayerError::RpcConnectionFailed(_) => true,
@@ -811,17 +1067,24 @@ async fn execute_payment_on_chain_job_safe(
                     RelayerError::TransactionFailed(_) => true, // other tx failures might be retryable
                     _ => false,
                 };
-                
+
                 if !should_retry {
-                    warn!("permanent error, not retrying: {}", last_error.as_ref().unwrap());
+                    warn!(
+                        "permanent error, not retrying: {}",
+                        last_error.as_ref().unwrap()
+                    );
                     break;
                 }
-                
+
                 if retry_count < max_retries {
                     let backoff_seconds = BASE_RETRY_DELAY_SECONDS * (2_u64.pow(retry_count - 1));
-                    warn!("execution failed on attempt {}, retrying in {} seconds: {}", 
-                          retry_count, backoff_seconds, last_error.as_ref().unwrap());
-                    
+                    warn!(
+                        "execution failed on attempt {}, retrying in {} seconds: {}",
+                        retry_count,
+                        backoff_seconds,
+                        last_error.as_ref().unwrap()
+                    );
+
                     tokio::time::sleep(tokio::time::Duration::from_secs(backoff_seconds)).await;
                 }
             }
@@ -835,9 +1098,12 @@ async fn execute_payment_on_chain_job_safe(
 async fn record_successful_execution_job_safe(
     subscription: &Subscription,
     execution_result: &ExecutionResult,
-    queries: &Arc<Queries>
+    queries: &Arc<Queries>,
 ) -> Result<()> {
-    info!("recording successful execution for subscription {}", subscription.id);
+    info!(
+        "recording successful execution for subscription {}",
+        subscription.id
+    );
 
     let execution_record = ExecutionRecord {
         id: 0,
@@ -853,19 +1119,22 @@ async fn record_successful_execution_job_safe(
         executed_at: Utc::now(),
     };
 
-    let new_payments_made = subscription.executed_payments
+    let new_payments_made = subscription
+        .executed_payments
         .checked_add(1)
         .ok_or_else(|| RelayerError::InternalError("payment count overflow".to_string()))?;
-    let next_payment_time = subscription.next_payment_due + 
-        chrono::Duration::seconds(subscription.interval_seconds);
+    let next_payment_time =
+        subscription.next_payment_due + chrono::Duration::seconds(subscription.interval_seconds);
 
-    queries.record_execution_and_update_subscription(
-        &execution_record,
-        &subscription.id,
-        new_payments_made,
-        next_payment_time,
-        0
-    ).await?;
+    queries
+        .record_execution_and_update_subscription(
+            &execution_record,
+            &subscription.id,
+            new_payments_made,
+            next_payment_time,
+            0,
+        )
+        .await?;
 
     info!("execution record saved, subscription updated for next payment");
     Ok(())
@@ -874,27 +1143,33 @@ async fn record_successful_execution_job_safe(
 async fn handle_subscription_failure_job_safe(
     subscription: &Subscription,
     error: &RelayerError,
-    queries: &Arc<Queries>
+    queries: &Arc<Queries>,
 ) -> Result<()> {
     let new_failure_count = subscription.failure_count.saturating_add(1); // prevent overflow
-    
-    warn!("subscription {} failed (attempt {}): {}", 
-          subscription.id, new_failure_count, error);
+
+    warn!(
+        "subscription {} failed (attempt {}): {}",
+        subscription.id, new_failure_count, error
+    );
 
     if new_failure_count > 3 {
-        warn!("subscription {} exceeded maximum failures, pausing", subscription.id);
-        
-        queries.update_subscription_status_enum(
-            &subscription.id, 
-            SubscriptionStatus::Paused
-        ).await?;
+        warn!(
+            "subscription {} exceeded maximum failures, pausing",
+            subscription.id
+        );
+
+        queries
+            .update_subscription_status_enum(&subscription.id, SubscriptionStatus::Paused)
+            .await?;
     } else {
-        queries.update_subscription_after_payment(
-            &subscription.id,
-            subscription.executed_payments,
-            subscription.next_payment_due,
-            new_failure_count,
-        ).await?;
+        queries
+            .update_subscription_after_payment(
+                &subscription.id,
+                subscription.executed_payments,
+                subscription.next_payment_due,
+                new_failure_count,
+            )
+            .await?;
     }
 
     Ok(())
@@ -975,12 +1250,12 @@ mod tests {
     #[tokio::test]
     async fn test_subscription_timing_validation() {
         let now = Utc::now();
-        
+
         let future_subscription = Subscription {
             next_payment_due: now + chrono::Duration::hours(1),
             ..create_test_subscription()
         };
-        
+
         let due_subscription = Subscription {
             next_payment_due: now - chrono::Duration::hours(1),
             ..create_test_subscription()
@@ -1004,7 +1279,7 @@ mod tests {
     #[tokio::test]
     async fn test_failure_count_logic() {
         let failure_counts = vec![1, 2, 3, 4];
-        
+
         for count in failure_counts {
             let should_pause = count > 3;
             if should_pause {
