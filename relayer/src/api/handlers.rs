@@ -1,15 +1,14 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{rejection::JsonRejection, Path, Query, State},
     Json,
 };
 use chrono::Utc;
-use ethers::types::Address;
+use ethers::types::{Address, U256};
 use serde::Deserialize;
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use super::envio::EnvioClient;
 use super::types::*;
 use super::validation::ValidationService;
 use crate::database::models::{IntentCache, Subscription};
@@ -18,8 +17,11 @@ use crate::{AppState, RelayerError, Result};
 // post /api/v1/intent
 pub async fn submit_intent_handler(
     State(app_state): State<Arc<AppState>>,
-    Json(request): Json<SubmitIntentRequest>,
+    payload: std::result::Result<Json<SubmitIntentRequest>, JsonRejection>,
 ) -> Result<Json<SubmitIntentResponse>> {
+    let Json(request) = payload.map_err(|rejection| {
+        RelayerError::Validation(format!("invalid request body: {}", rejection))
+    })?;
     info!(
         "received intent submission request for subscriber: {}",
         request.intent.subscriber
@@ -270,27 +272,20 @@ pub async fn get_merchant_transactions_handler(
     let page = params.page.unwrap_or(0);
     let page_size = params.size.unwrap_or(50).min(100);
 
-    let envio_url = app_state
-        .config
-        .envio_hyperindex_url
-        .clone()
-        .unwrap_or_else(|| "https://indexer.bigdevenergy.link/a5a74b6/v1/graphql".to_string());
-    let envio_client = EnvioClient::new(envio_url);
-
-    let (transactions, total_count, total_revenue) = envio_client
+    let envio_result = app_state
+        .envio_client
         .get_merchant_transactions(&merchant_address, page, page_size)
         .await?;
 
-    let has_more = (page + 1) * page_size < (total_count as u32);
-    let explorer_url = envio_client.get_explorer_url(&merchant_address);
-
     let response = MerchantTransactionsResponse {
-        transactions,
-        count: total_count,
-        total_revenue,
-        envio_explorer_url: explorer_url,
+        transactions: envio_result.transactions,
+        count: envio_result.total_count,
+        total_revenue: envio_result.total_revenue,
+        envio_explorer_url: envio_result
+            .explorer_url
+            .unwrap_or_else(|| "https://explorer.envio.dev".to_string()),
         page,
-        has_more,
+        has_more: envio_result.has_more,
     };
 
     info!(
@@ -311,21 +306,60 @@ pub async fn get_merchant_stats_handler(
 
     ValidationService::validate_address_format(&merchant_address)?;
 
-    let envio_url = app_state
-        .config
-        .envio_hyperindex_url
-        .clone()
-        .unwrap_or_else(|| "https://indexer.bigdevenergy.link/a5a74b6/v1/graphql".to_string());
-    let envio_client = EnvioClient::new(envio_url);
+    let stats = app_state
+        .envio_client
+        .get_merchant_stats(&merchant_address)
+        .await?;
 
-    let stats = envio_client.get_merchant_stats(&merchant_address).await?;
+    let (stats_response, explorer_url) = if let Some(data) = stats {
+        let response = MerchantStatsResponse {
+            merchant: data.merchant.clone(),
+            total_revenue: data.total_revenue.clone(),
+            total_transactions: data.total_payments as u64,
+            active_subscriptions: data.active_subscriptions as u64,
+            total_subscriptions: data.total_subscriptions as u64,
+            average_transaction_value: calculate_average_transaction_value(
+                &data.total_revenue,
+                data.total_payments,
+            ),
+            first_transaction_date: None,
+            last_transaction_date: None,
+            monthly_revenue: Vec::new(),
+            envio_explorer_url: app_state
+                .envio_client
+                .build_explorer_url("merchants", &data.merchant)
+                .unwrap_or_else(|| "https://explorer.envio.dev".to_string()),
+        };
+        (response.clone(), response.envio_explorer_url.clone())
+    } else {
+        let address = merchant_address.to_lowercase();
+        let explorer = app_state
+            .envio_client
+            .build_explorer_url("merchants", &address)
+            .unwrap_or_else(|| "https://explorer.envio.dev".to_string());
+        (
+            MerchantStatsResponse {
+                merchant: address.clone(),
+                total_revenue: "0".to_string(),
+                total_transactions: 0,
+                active_subscriptions: 0,
+                total_subscriptions: 0,
+                average_transaction_value: "0".to_string(),
+                first_transaction_date: None,
+                last_transaction_date: None,
+                monthly_revenue: Vec::new(),
+                envio_explorer_url: explorer.clone(),
+            },
+            explorer,
+        )
+    };
 
     info!(
-        "successfully fetched stats for merchant {}: {} transactions, {} revenue",
-        merchant_address, stats.total_transactions, stats.total_revenue
+        "successfully fetched stats for merchant {} (explorer: {})",
+        merchant_address, explorer_url
     );
 
-    Ok(Json(stats))
+    Ok(Json(stats_response))
 }
 
 // get /health
@@ -370,27 +404,23 @@ pub async fn health_check_handler(
         },
     };
 
-    let _envio_start = std::time::Instant::now();
-    let envio_health = if let Some(envio_url) = &app_state.config.envio_hyperindex_url {
-        let envio_client = EnvioClient::new(envio_url.clone());
-        match envio_client.health_check().await {
-            Ok(response_time) => ServiceStatus {
-                healthy: true,
-                response_time_ms: Some(response_time),
-                error: None,
-            },
-            Err(e) => ServiceStatus {
-                healthy: false,
-                response_time_ms: None,
-                error: Some(e.to_string()),
-            },
-        }
-    } else {
-        ServiceStatus {
+    let envio_start = std::time::Instant::now();
+    let envio_health = match app_state.envio_client.health_check().await {
+        Ok(true) => ServiceStatus {
+            healthy: true,
+            response_time_ms: Some(envio_start.elapsed().as_millis() as u64),
+            error: None,
+        },
+        Ok(false) => ServiceStatus {
+            healthy: false,
+            response_time_ms: Some(envio_start.elapsed().as_millis() as u64),
+            error: Some("Envio health check reported unhealthy".to_string()),
+        },
+        Err(e) => ServiceStatus {
             healthy: false,
             response_time_ms: None,
-            error: Some("Envio URL not configured".to_string()),
-        }
+            error: Some(e.to_string()),
+        },
     };
 
     let overall_healthy = database_health.healthy && rpc_health.healthy && envio_health.healthy;
@@ -458,4 +488,19 @@ pub async fn status_check_handler(
     });
 
     Ok(Json(status_response))
+}
+
+fn calculate_average_transaction_value(total_revenue: &str, total_payments: i64) -> String {
+    if total_payments <= 0 {
+        return "0".to_string();
+    }
+
+    match U256::from_dec_str(total_revenue) {
+        Ok(revenue) => {
+            let payments = U256::from(total_payments as u64);
+            let average = revenue / payments;
+            average.to_string()
+        }
+        Err(_) => "0".to_string(),
+    }
 }

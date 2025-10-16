@@ -18,7 +18,8 @@ pub struct Config {
     pub max_executions_per_batch: i64,
     pub max_gas_price_gwei: u64,
     pub relayer_address: String,
-    pub envio_hyperindex_url: Option<String>,
+    pub envio_graphql_endpoint: Option<String>,
+    pub envio_explorer_url: Option<String>,
     pub avail_rpc_url: Option<String>,
     pub avail_application_id: Option<u32>,
     pub avail_auth_token: Option<String>,
@@ -66,7 +67,8 @@ impl Config {
                 .context("MAX_GAS_PRICE_GWEI must be a valid number")?,
             relayer_address: env::var("RELAYER_ADDRESS")
                 .context("RELAYER_ADDRESS environment variable is required")?,
-            envio_hyperindex_url: env::var("ENVIO_HYPERINDEX_URL").ok(),
+            envio_graphql_endpoint: env::var("ENVIO_GRAPHQL_ENDPOINT").ok(),
+            envio_explorer_url: env::var("ENVIO_EXPLORER_URL").ok(),
             avail_rpc_url: env::var("AVAIL_RPC_URL").ok(),
             avail_application_id: env::var("AVAIL_APPLICATION_ID")
                 .ok()
@@ -174,6 +176,23 @@ impl Config {
             ));
         }
 
+        let envio_graphql_provided = self
+            .envio_graphql_endpoint
+            .as_ref()
+            .map(|endpoint| !endpoint.trim().is_empty())
+            .unwrap_or(false);
+        let envio_explorer_provided = self
+            .envio_explorer_url
+            .as_ref()
+            .map(|url| !url.trim().is_empty())
+            .unwrap_or(false);
+
+        if envio_graphql_provided ^ envio_explorer_provided {
+            return Err(anyhow::anyhow!(
+                "both ENVIO_GRAPHQL_ENDPOINT and ENVIO_EXPLORER_URL must be provided together"
+            ));
+        }
+
         Ok(())
     }
 
@@ -211,6 +230,18 @@ impl Config {
                 .avail_secret_uri
                 .as_ref()
                 .map(|uri| !uri.trim().is_empty())
+                .unwrap_or(false)
+    }
+
+    pub fn envio_enabled(&self) -> bool {
+        self.envio_graphql_endpoint
+            .as_ref()
+            .map(|endpoint| !endpoint.trim().is_empty())
+            .unwrap_or(false)
+            && self
+                .envio_explorer_url
+                .as_ref()
+                .map(|url| !url.trim().is_empty())
                 .unwrap_or(false)
     }
 }

@@ -1,57 +1,139 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
-use super::models::{Execution, ExecutionRecord, IntentCache, Subscription, SubscriptionStatus};
+use super::{
+    models::{Execution, ExecutionRecord, IntentCache, Subscription, SubscriptionStatus},
+    StubStorage,
+};
 use crate::error::{RelayerError, Result};
 use chrono::{DateTime, Utc};
 use ethers::types::U256;
-use sqlx::{query, query_as, PgPool, Row};
+use sqlx::{types::BigDecimal, PgPool};
+use std::{str::FromStr, sync::Arc};
 use tracing::{info, warn};
 
 #[derive(Clone)]
 pub struct Queries {
-    pool: PgPool,
+    pool: Option<PgPool>,
+    stub: Option<Arc<StubStorage>>,
 }
 
 impl Queries {
     pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+        Self {
+            pool: Some(pool),
+            stub: None,
+        }
+    }
+
+    pub(crate) fn new_stub(storage: Arc<StubStorage>) -> Self {
+        Self {
+            pool: None,
+            stub: Some(storage),
+        }
+    }
+
+    fn postgres_pool(&self) -> Option<&PgPool> {
+        self.pool.as_ref()
+    }
+
+    fn stub_storage(&self) -> Option<&Arc<StubStorage>> {
+        self.stub.as_ref()
+    }
+
+    fn require_postgres(&self, method: &str) -> Result<&PgPool> {
+        self.postgres_pool().ok_or_else(|| {
+            RelayerError::InternalError(format!(
+                "{} requires a postgres connection (stub mode unsupported)",
+                method
+            ))
+        })
     }
 
     // subscription queries
     pub async fn insert_subscription(&self, subscription: &Subscription) -> Result<String> {
         info!("inserting subscription with id: {}", subscription.id);
 
-        query(
+        if let Some(storage) = self.stub_storage() {
+            let mut subscriptions = storage.subscriptions.lock().unwrap();
+            subscriptions.insert(subscription.id.clone(), subscription.clone());
+            info!(
+                "successfully inserted subscription: {} (stub)",
+                subscription.id
+            );
+            return Ok(subscription.id.clone());
+        }
+
+        let pool = self.require_postgres("insert_subscription")?;
+        let record = subscription.clone();
+
+        sqlx::query!(
             r#"
             INSERT INTO subscriptions (
-                id, subscriber, merchant, amount, interval_seconds, start_time,
-                max_payments, max_total_amount, expiry, nonce, status,
-                executed_payments, total_paid, next_payment_due, failure_count,
-                created_at, updated_at, chain, avail_block_number, avail_extrinsic_index
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
-            "#
+                id,
+                subscriber,
+                merchant,
+                amount,
+                interval_seconds,
+                start_time,
+                max_payments,
+                max_total_amount,
+                expiry,
+                nonce,
+                status,
+                executed_payments,
+                total_paid,
+                next_payment_due,
+                failure_count,
+                created_at,
+                updated_at,
+                chain,
+                avail_block_number,
+                avail_extrinsic_index
+            ) VALUES (
+                $1,
+                $2,
+                $3,
+                $4,
+                $5,
+                $6,
+                $7,
+                $8,
+                $9,
+                $10,
+                $11,
+                $12,
+                $13,
+                $14,
+                $15,
+                $16,
+                $17,
+                $18,
+                $19,
+                $20
+            )
+            "#,
+            record.id,
+            record.subscriber,
+            record.merchant,
+            record.amount,
+            record.interval_seconds,
+            record.start_time,
+            record.max_payments,
+            record.max_total_amount,
+            record.expiry,
+            record.nonce,
+            record.status,
+            record.executed_payments,
+            record.total_paid,
+            record.next_payment_due,
+            record.failure_count,
+            record.created_at,
+            record.updated_at,
+            record.chain,
+            record.avail_block_number,
+            record.avail_extrinsic_index
         )
-        .bind(&subscription.id)
-        .bind(&subscription.subscriber)
-        .bind(&subscription.merchant)
-        .bind(&subscription.amount)
-        .bind(&subscription.interval_seconds)
-        .bind(&subscription.start_time)
-        .bind(&subscription.max_payments)
-        .bind(&subscription.max_total_amount)
-        .bind(&subscription.expiry)
-        .bind(&subscription.nonce)
-        .bind(&subscription.status)
-        .bind(&subscription.executed_payments)
-        .bind(&subscription.total_paid)
-        .bind(&subscription.next_payment_due)
-        .bind(&subscription.failure_count)
-        .bind(&subscription.created_at)
-        .bind(&subscription.updated_at)
-        .bind(&subscription.chain)
-        .bind(&subscription.avail_block_number)
-        .bind(&subscription.avail_extrinsic_index)
-        .execute(&self.pool)
+        .execute(pool)
         .await?;
 
         info!("successfully inserted subscription: {}", subscription.id);
@@ -61,10 +143,49 @@ impl Queries {
     pub async fn get_subscription(&self, subscription_id: &str) -> Result<Option<Subscription>> {
         info!("fetching subscription: {}", subscription_id);
 
-        let subscription = query_as::<_, Subscription>("SELECT * FROM subscriptions WHERE id = $1")
-            .bind(subscription_id)
-            .fetch_optional(&self.pool)
-            .await?;
+        if let Some(storage) = self.stub_storage() {
+            let subscriptions = storage.subscriptions.lock().unwrap();
+            let result = subscriptions.get(subscription_id).cloned();
+            match &result {
+                Some(_) => info!("found subscription: {} (stub)", subscription_id),
+                None => warn!("subscription not found: {} (stub)", subscription_id),
+            }
+            return Ok(result);
+        }
+
+        let pool = self.require_postgres("get_subscription")?;
+
+        let subscription = sqlx::query_as!(
+            Subscription,
+            r#"
+            SELECT
+                id,
+                subscriber,
+                merchant,
+                amount,
+                interval_seconds,
+                start_time,
+                max_payments,
+                max_total_amount,
+                expiry,
+                nonce,
+                status,
+                executed_payments,
+                total_paid,
+                next_payment_due,
+                failure_count,
+                created_at,
+                updated_at,
+                chain,
+                avail_block_number,
+                avail_extrinsic_index
+            FROM subscriptions
+            WHERE id = $1
+            "#,
+            subscription_id
+        )
+        .fetch_optional(pool)
+        .await?;
 
         match &subscription {
             Some(_) => info!("found subscription: {}", subscription_id),
@@ -82,32 +203,83 @@ impl Queries {
             subscriber, nonce
         );
 
-        let result = query(
-            "SELECT COUNT(*) as count FROM subscriptions WHERE subscriber = $1 AND nonce = $2",
+        if let Some(storage) = self.stub_storage() {
+            let subscriptions = storage.subscriptions.lock().unwrap();
+            let used = subscriptions
+                .values()
+                .any(|sub| sub.subscriber == subscriber && sub.nonce == nonce);
+            return Ok(used);
+        }
+
+        let pool = self.require_postgres("is_nonce_used")?;
+
+        let result = sqlx::query!(
+            r#"SELECT COUNT(*) AS "count!" FROM subscriptions WHERE subscriber = $1 AND nonce = $2"#,
+            subscriber,
+            nonce
         )
-        .bind(subscriber)
-        .bind(nonce)
-        .fetch_one(&self.pool)
+        .fetch_one(pool)
         .await?;
 
-        let count: i64 = result.get("count");
-        Ok(count > 0)
+        Ok(result.count > 0)
     }
 
     pub async fn get_due_subscriptions(&self) -> Result<Vec<Subscription>> {
         info!("fetching all due subscriptions");
 
-        let subscriptions = query_as::<_, Subscription>(
+        if let Some(storage) = self.stub_storage() {
+            let now = Utc::now();
+            let subscriptions = storage.subscriptions.lock().unwrap();
+            let mut results: Vec<Subscription> = subscriptions
+                .values()
+                .filter(|sub| {
+                    sub.status == "ACTIVE"
+                        && sub.expiry > now
+                        && sub.executed_payments < sub.max_payments
+                        && sub.next_payment_due <= now
+                })
+                .cloned()
+                .collect();
+            results.sort_by_key(|sub| sub.next_payment_due);
+            info!("found {} due subscriptions (stub)", results.len());
+            return Ok(results);
+        }
+
+        let pool = self.require_postgres("get_due_subscriptions")?;
+
+        let subscriptions = sqlx::query_as!(
+            Subscription,
             r#"
-            SELECT * FROM subscriptions 
-            WHERE status = 'ACTIVE' 
-            AND expiry > NOW()
-            AND executed_payments < max_payments
-            AND next_payment_due <= NOW()
+            SELECT
+                id,
+                subscriber,
+                merchant,
+                amount,
+                interval_seconds,
+                start_time,
+                max_payments,
+                max_total_amount,
+                expiry,
+                nonce,
+                status,
+                executed_payments,
+                total_paid,
+                next_payment_due,
+                failure_count,
+                created_at,
+                updated_at,
+                chain,
+                avail_block_number,
+                avail_extrinsic_index
+            FROM subscriptions
+            WHERE status = 'ACTIVE'
+                AND expiry > NOW()
+                AND executed_payments < max_payments
+                AND next_payment_due <= NOW()
             ORDER BY next_payment_due ASC
-            "#,
+            "#
         )
-        .fetch_all(&self.pool)
+        .fetch_all(pool)
         .await?;
 
         info!("found {} due subscriptions", subscriptions.len());
@@ -124,21 +296,69 @@ impl Queries {
             chain, limit
         );
 
-        let subscriptions = query_as::<_, Subscription>(
+        if let Some(storage) = self.stub_storage() {
+            let now = Utc::now();
+            let subscriptions = storage.subscriptions.lock().unwrap();
+            let mut results: Vec<Subscription> = subscriptions
+                .values()
+                .filter(|sub| {
+                    sub.status == "ACTIVE"
+                        && sub.chain == chain
+                        && sub.expiry > now
+                        && sub.executed_payments < sub.max_payments
+                        && sub.next_payment_due <= now
+                })
+                .cloned()
+                .collect();
+            results.sort_by_key(|sub| sub.next_payment_due);
+            results.truncate(limit as usize);
+            info!(
+                "found {} due subscriptions for chain: {} (stub)",
+                results.len(),
+                chain
+            );
+            return Ok(results);
+        }
+
+        let pool = self.require_postgres("get_due_subscriptions_for_chain")?;
+
+        let subscriptions = sqlx::query_as!(
+            Subscription,
             r#"
-            SELECT * FROM subscriptions 
-            WHERE status = 'ACTIVE' 
-            AND chain = $1
-            AND expiry > NOW()
-            AND executed_payments < max_payments
-            AND next_payment_due <= NOW()
+            SELECT
+                id,
+                subscriber,
+                merchant,
+                amount,
+                interval_seconds,
+                start_time,
+                max_payments,
+                max_total_amount,
+                expiry,
+                nonce,
+                status,
+                executed_payments,
+                total_paid,
+                next_payment_due,
+                failure_count,
+                created_at,
+                updated_at,
+                chain,
+                avail_block_number,
+                avail_extrinsic_index
+            FROM subscriptions
+            WHERE status = 'ACTIVE'
+                AND chain = $1
+                AND expiry > NOW()
+                AND executed_payments < max_payments
+                AND next_payment_due <= NOW()
             ORDER BY next_payment_due ASC
             LIMIT $2
             "#,
+            chain,
+            limit
         )
-        .bind(chain)
-        .bind(limit)
-        .fetch_all(&self.pool)
+        .fetch_all(pool)
         .await?;
 
         info!(
@@ -159,12 +379,37 @@ impl Queries {
             subscription_id, status
         );
 
-        let result =
-            query("UPDATE subscriptions SET status = $1, updated_at = NOW() WHERE id = $2")
-                .bind(status)
-                .bind(subscription_id)
-                .execute(&self.pool)
-                .await?;
+        if let Some(storage) = self.stub_storage() {
+            let mut subscriptions = storage.subscriptions.lock().unwrap();
+            if let Some(subscription) = subscriptions.get_mut(subscription_id) {
+                subscription.status = status.to_string();
+                subscription.updated_at = Utc::now();
+                info!(
+                    "successfully updated subscription {} status to: {} (stub)",
+                    subscription_id, status
+                );
+                return Ok(());
+            } else {
+                warn!(
+                    "no subscription found to update (stub): {}",
+                    subscription_id
+                );
+                return Err(RelayerError::NotFound(format!(
+                    "subscription not found: {}",
+                    subscription_id
+                )));
+            }
+        }
+
+        let pool = self.require_postgres("update_subscription_status")?;
+
+        let result = sqlx::query!(
+            r#"UPDATE subscriptions SET status = $1, updated_at = NOW() WHERE id = $2"#,
+            status,
+            subscription_id
+        )
+        .execute(pool)
+        .await?;
 
         if result.rows_affected() == 0 {
             warn!("no subscription found to update: {}", subscription_id);
@@ -205,7 +450,35 @@ impl Queries {
                 (subscription.executed_payments + 1) * subscription.interval_seconds,
             );
 
-        let result = query(
+        if let Some(storage) = self.stub_storage() {
+            let mut subscriptions = storage.subscriptions.lock().unwrap();
+            let stored = subscriptions.get_mut(subscription_id).ok_or_else(|| {
+                RelayerError::NotFound(format!("subscription not found: {}", subscription_id))
+            })?;
+
+            stored.executed_payments += 1;
+
+            let current_total =
+                U256::from_dec_str(&stored.total_paid).unwrap_or_else(|_| U256::zero());
+            let payment_amount = U256::from_dec_str(amount_paid).unwrap_or_else(|_| U256::zero());
+            let updated_total = current_total + payment_amount;
+            stored.total_paid = updated_total.to_string();
+            stored.next_payment_due = next_payment_due;
+            stored.updated_at = Utc::now();
+
+            info!(
+                "successfully incremented payment count for subscription: {} (stub)",
+                subscription_id
+            );
+            return Ok(());
+        }
+
+        let pool = self.require_postgres("increment_payment_count")?;
+        let amount_paid_decimal = BigDecimal::from_str(amount_paid).map_err(|err| {
+            RelayerError::Validation(format!("invalid amount_paid value: {}", err))
+        })?;
+
+        let result = sqlx::query!(
             r#"
             UPDATE subscriptions 
             SET executed_payments = executed_payments + 1,
@@ -214,11 +487,11 @@ impl Queries {
                 updated_at = NOW()
             WHERE id = $1
             "#,
+            subscription_id,
+            amount_paid_decimal,
+            next_payment_due
         )
-        .bind(subscription_id)
-        .bind(amount_paid)
-        .bind(next_payment_due)
-        .execute(&self.pool)
+        .execute(pool)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -242,11 +515,27 @@ impl Queries {
             subscription_id
         );
 
-        let result = query(
-            "UPDATE subscriptions SET failure_count = failure_count + 1, updated_at = NOW() WHERE id = $1"
+        if let Some(storage) = self.stub_storage() {
+            let mut subscriptions = storage.subscriptions.lock().unwrap();
+            let subscription = subscriptions.get_mut(subscription_id).ok_or_else(|| {
+                RelayerError::NotFound(format!("subscription not found: {}", subscription_id))
+            })?;
+            subscription.failure_count += 1;
+            subscription.updated_at = Utc::now();
+            info!(
+                "incremented failure count for subscription: {} (stub)",
+                subscription_id
+            );
+            return Ok(());
+        }
+
+        let pool = self.require_postgres("increment_failure_count")?;
+
+        let result = sqlx::query!(
+            r#"UPDATE subscriptions SET failure_count = failure_count + 1, updated_at = NOW() WHERE id = $1"#,
+            subscription_id
         )
-        .bind(subscription_id)
-        .execute(&self.pool)
+        .execute(pool)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -274,34 +563,77 @@ impl Queries {
             execution.subscription_id
         );
 
-        let row = query(
+        if let Some(storage) = self.stub_storage() {
+            let mut executions = storage.executions.lock().unwrap();
+            let mut execution_clone = execution.clone();
+            if execution_clone.id == 0 {
+                execution_clone.id = storage.next_execution_id();
+            }
+            executions.push(execution_clone.clone());
+            info!(
+                "successfully inserted execution with id: {} (stub)",
+                execution_clone.id
+            );
+            return Ok(execution_clone.id);
+        }
+
+        let pool = self.require_postgres("insert_execution")?;
+        let exec = execution.clone();
+
+        let row = sqlx::query!(
             r#"
             INSERT INTO executions (
-                subscription_id, relayer_address, payment_number, amount_paid,
-                protocol_fee, merchant_amount, transaction_hash, block_number,
-                gas_used, gas_price, status, error_message, executed_at, chain
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                subscription_id,
+                relayer_address,
+                payment_number,
+                amount_paid,
+                protocol_fee,
+                merchant_amount,
+                transaction_hash,
+                block_number,
+                gas_used,
+                gas_price,
+                status,
+                error_message,
+                executed_at,
+                chain
+            ) VALUES (
+                $1,
+                $2,
+                $3,
+                $4,
+                $5,
+                $6,
+                $7,
+                $8,
+                $9,
+                $10,
+                $11,
+                $12,
+                $13,
+                $14
+            )
             RETURNING id
             "#,
+            exec.subscription_id,
+            exec.relayer_address,
+            exec.payment_number,
+            exec.amount_paid,
+            exec.protocol_fee,
+            exec.merchant_amount,
+            exec.transaction_hash,
+            exec.block_number,
+            exec.gas_used,
+            exec.gas_price,
+            exec.status,
+            exec.error_message,
+            exec.executed_at,
+            exec.chain
         )
-        .bind(&execution.subscription_id)
-        .bind(&execution.relayer_address)
-        .bind(&execution.payment_number)
-        .bind(&execution.amount_paid)
-        .bind(&execution.protocol_fee)
-        .bind(&execution.merchant_amount)
-        .bind(&execution.transaction_hash)
-        .bind(&execution.block_number)
-        .bind(&execution.gas_used)
-        .bind(&execution.gas_price)
-        .bind(&execution.status)
-        .bind(&execution.error_message)
-        .bind(&execution.executed_at)
-        .bind(&execution.chain)
-        .fetch_one(&self.pool)
+        .fetch_one(pool)
         .await?;
 
-        let id: i64 = row.get("id");
+        let id: i64 = row.id;
         info!("successfully inserted execution with id: {}", id);
         Ok(id)
     }
@@ -316,18 +648,61 @@ impl Queries {
             merchant, limit
         );
 
-        let executions = query_as::<_, Execution>(
+        if let Some(storage) = self.stub_storage() {
+            let subscriptions = storage.subscriptions.lock().unwrap().clone();
+            let executions = storage.executions.lock().unwrap();
+
+            let mut filtered: Vec<Execution> = executions
+                .iter()
+                .filter(|execution| {
+                    subscriptions
+                        .get(&execution.subscription_id)
+                        .map(|sub| sub.merchant == merchant)
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect();
+            filtered.sort_by_key(|execution| std::cmp::Reverse(execution.executed_at));
+            filtered.truncate(limit as usize);
+            info!(
+                "found {} executions for merchant: {} (stub)",
+                filtered.len(),
+                merchant
+            );
+            return Ok(filtered);
+        }
+
+        let pool = self.require_postgres("get_merchant_executions")?;
+
+        let executions = sqlx::query_as!(
+            Execution,
             r#"
-            SELECT e.* FROM executions e
+            SELECT
+                e.id,
+                e.subscription_id,
+                e.relayer_address,
+                e.payment_number,
+                e.amount_paid,
+                e.protocol_fee,
+                e.merchant_amount,
+                e.transaction_hash,
+                e.block_number,
+                e.gas_used,
+                e.gas_price,
+                e.status,
+                e.error_message,
+                e.executed_at,
+                e.chain
+            FROM executions e
             JOIN subscriptions s ON e.subscription_id = s.id
             WHERE s.merchant = $1
             ORDER BY e.executed_at DESC
             LIMIT $2
             "#,
+            merchant,
+            limit
         )
-        .bind(merchant)
-        .bind(limit)
-        .fetch_all(&self.pool)
+        .fetch_all(pool)
         .await?;
 
         info!(
@@ -344,11 +719,50 @@ impl Queries {
     ) -> Result<Vec<Execution>> {
         info!("fetching executions for subscription: {}", subscription_id);
 
-        let executions = query_as::<_, Execution>(
-            "SELECT * FROM executions WHERE subscription_id = $1 ORDER BY payment_number ASC",
+        if let Some(storage) = self.stub_storage() {
+            let executions = storage.executions.lock().unwrap();
+            let mut filtered: Vec<Execution> = executions
+                .iter()
+                .filter(|execution| execution.subscription_id == subscription_id)
+                .cloned()
+                .collect();
+            filtered.sort_by_key(|execution| execution.payment_number);
+            info!(
+                "found {} executions for subscription: {} (stub)",
+                filtered.len(),
+                subscription_id
+            );
+            return Ok(filtered);
+        }
+
+        let pool = self.require_postgres("get_executions_by_subscription")?;
+
+        let executions = sqlx::query_as!(
+            Execution,
+            r#"
+            SELECT
+                id,
+                subscription_id,
+                relayer_address,
+                payment_number,
+                amount_paid,
+                protocol_fee,
+                merchant_amount,
+                transaction_hash,
+                block_number,
+                gas_used,
+                gas_price,
+                status,
+                error_message,
+                executed_at,
+                chain
+            FROM executions
+            WHERE subscription_id = $1
+            ORDER BY payment_number ASC
+            "#,
+            subscription_id
         )
-        .bind(subscription_id)
-        .fetch_all(&self.pool)
+        .fetch_all(pool)
         .await?;
 
         info!(
@@ -367,12 +781,38 @@ impl Queries {
     ) -> Result<()> {
         info!("updating execution {} status to: {}", execution_id, status);
 
-        let result = query("UPDATE executions SET status = $1, error_message = $2 WHERE id = $3")
-            .bind(status)
-            .bind(error_message)
-            .bind(execution_id)
-            .execute(&self.pool)
-            .await?;
+        if let Some(storage) = self.stub_storage() {
+            let mut executions = storage.executions.lock().unwrap();
+            if let Some(execution) = executions
+                .iter_mut()
+                .find(|execution| execution.id == execution_id)
+            {
+                execution.status = status.to_string();
+                execution.error_message = error_message.map(|msg| msg.to_string());
+                info!(
+                    "successfully updated execution {} status to: {} (stub)",
+                    execution_id, status
+                );
+                return Ok(());
+            } else {
+                warn!("no execution found to update (stub): {}", execution_id);
+                return Err(RelayerError::NotFound(format!(
+                    "execution not found: {}",
+                    execution_id
+                )));
+            }
+        }
+
+        let pool = self.require_postgres("update_execution_status")?;
+
+        let result = sqlx::query!(
+            r#"UPDATE executions SET status = $1, error_message = $2 WHERE id = $3"#,
+            status,
+            error_message,
+            execution_id
+        )
+        .execute(pool)
+        .await?;
 
         if result.rows_affected() == 0 {
             warn!("no execution found to update: {}", execution_id);
@@ -396,8 +836,33 @@ impl Queries {
             intent.subscription_id
         );
 
+        if let Some(storage) = self.stub_storage() {
+            let mut intents = storage.intent_cache.lock().unwrap();
+            let mut stored = intent.clone();
+
+            let id = if let Some(existing) = intents.iter_mut().find(|entry| {
+                entry.subscription_id == intent.subscription_id
+                    && entry.signature == intent.signature
+            }) {
+                stored.id = existing.id;
+                *existing = stored.clone();
+                existing.id
+            } else {
+                let new_id = storage.next_intent_id();
+                stored.id = new_id;
+                intents.push(stored.clone());
+                new_id
+            };
+
+            info!("successfully cached intent with id: {} (stub)", id);
+            return Ok(id);
+        }
+
+        let pool = self.require_postgres("cache_intent")?;
+        let record = intent.clone();
+
         // use upsert (ON CONFLICT) to handle duplicate intents
-        let row = query(
+        let row = sqlx::query!(
             r#"
             INSERT INTO intent_cache (
                 subscription_intent, signature, subscription_id, subscriber, merchant,
@@ -415,29 +880,29 @@ impl Queries {
                 avail_extrinsic_index = EXCLUDED.avail_extrinsic_index
             RETURNING id
             "#,
+            record.subscription_intent,
+            record.signature,
+            record.subscription_id,
+            record.subscriber,
+            record.merchant,
+            record.amount,
+            record.interval_seconds,
+            record.start_time,
+            record.max_payments,
+            record.max_total_amount,
+            record.expiry,
+            record.nonce,
+            record.processed,
+            record.created_at,
+            record.processed_at,
+            record.chain,
+            record.avail_block_number,
+            record.avail_extrinsic_index
         )
-        .bind(&intent.subscription_intent)
-        .bind(&intent.signature)
-        .bind(&intent.subscription_id)
-        .bind(&intent.subscriber)
-        .bind(&intent.merchant)
-        .bind(&intent.amount)
-        .bind(&intent.interval_seconds)
-        .bind(&intent.start_time)
-        .bind(&intent.max_payments)
-        .bind(&intent.max_total_amount)
-        .bind(&intent.expiry)
-        .bind(&intent.nonce)
-        .bind(&intent.processed)
-        .bind(&intent.created_at)
-        .bind(&intent.processed_at)
-        .bind(&intent.chain)
-        .bind(&intent.avail_block_number)
-        .bind(&intent.avail_extrinsic_index)
-        .fetch_one(&self.pool)
+        .fetch_one(pool)
         .await?;
 
-        let id: i64 = row.get("id");
+        let id: i64 = row.id;
         info!("successfully cached intent with id: {}", id);
         Ok(id)
     }
@@ -448,11 +913,61 @@ impl Queries {
             subscription_id
         );
 
-        let intent = query_as::<_, IntentCache>(
-            "SELECT * FROM intent_cache WHERE subscription_id = $1 ORDER BY created_at DESC LIMIT 1"
+        if let Some(storage) = self.stub_storage() {
+            let intents = storage.intent_cache.lock().unwrap();
+            let intent = intents
+                .iter()
+                .filter(|entry| entry.subscription_id == subscription_id)
+                .cloned()
+                .max_by_key(|entry| entry.created_at);
+
+            match &intent {
+                Some(_) => info!(
+                    "found cached intent for subscription: {} (stub)",
+                    subscription_id
+                ),
+                None => warn!(
+                    "no cached intent found for subscription: {} (stub)",
+                    subscription_id
+                ),
+            }
+
+            return Ok(intent);
+        }
+
+        let pool = self.require_postgres("get_cached_intent")?;
+
+        let intent = sqlx::query_as!(
+            IntentCache,
+            r#"
+            SELECT
+                id,
+                subscription_intent,
+                signature,
+                subscription_id,
+                subscriber,
+                merchant,
+                amount,
+                interval_seconds,
+                start_time,
+                max_payments,
+                max_total_amount,
+                expiry,
+                nonce,
+                processed,
+                created_at,
+                processed_at,
+                chain,
+                avail_block_number,
+                avail_extrinsic_index
+            FROM intent_cache
+            WHERE subscription_id = $1
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+            subscription_id
         )
-        .bind(subscription_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(pool)
         .await?;
 
         match &intent {
@@ -476,19 +991,61 @@ impl Queries {
             chain, limit
         );
 
-        let intents = query_as::<_, IntentCache>(
+        if let Some(storage) = self.stub_storage() {
+            let now = Utc::now();
+            let intents = storage.intent_cache.lock().unwrap();
+            let mut results: Vec<IntentCache> = intents
+                .iter()
+                .filter(|intent| !intent.processed && intent.chain == chain && intent.expiry > now)
+                .cloned()
+                .collect();
+            results.sort_by_key(|intent| intent.created_at);
+            results.truncate(limit as usize);
+
+            info!(
+                "found {} unprocessed intents for chain: {} (stub)",
+                results.len(),
+                chain
+            );
+            return Ok(results);
+        }
+
+        let pool = self.require_postgres("get_unprocessed_intents")?;
+
+        let intents = sqlx::query_as!(
+            IntentCache,
             r#"
-            SELECT * FROM intent_cache 
-            WHERE processed = false 
-            AND chain = $1
-            AND expiry > NOW()
+            SELECT
+                id,
+                subscription_intent,
+                signature,
+                subscription_id,
+                subscriber,
+                merchant,
+                amount,
+                interval_seconds,
+                start_time,
+                max_payments,
+                max_total_amount,
+                expiry,
+                nonce,
+                processed,
+                created_at,
+                processed_at,
+                chain,
+                avail_block_number,
+                avail_extrinsic_index
+            FROM intent_cache
+            WHERE processed = false
+                AND chain = $1
+                AND expiry > NOW()
             ORDER BY created_at ASC
             LIMIT $2
             "#,
+            chain,
+            limit
         )
-        .bind(chain)
-        .bind(limit)
-        .fetch_all(&self.pool)
+        .fetch_all(pool)
         .await?;
 
         info!(
@@ -502,11 +1059,33 @@ impl Queries {
     pub async fn mark_intent_processed(&self, intent_id: i64) -> Result<()> {
         info!("marking intent {} as processed", intent_id);
 
-        let result =
-            query("UPDATE intent_cache SET processed = true, processed_at = NOW() WHERE id = $1")
-                .bind(intent_id)
-                .execute(&self.pool)
-                .await?;
+        if let Some(storage) = self.stub_storage() {
+            let mut intents = storage.intent_cache.lock().unwrap();
+            if let Some(intent) = intents.iter_mut().find(|intent| intent.id == intent_id) {
+                intent.processed = true;
+                intent.processed_at = Some(Utc::now());
+                info!(
+                    "successfully marked intent {} as processed (stub)",
+                    intent_id
+                );
+                return Ok(());
+            } else {
+                warn!("no intent found to mark as processed: {} (stub)", intent_id);
+                return Err(RelayerError::NotFound(format!(
+                    "intent not found: {}",
+                    intent_id
+                )));
+            }
+        }
+
+        let pool = self.require_postgres("mark_intent_processed")?;
+
+        let result = sqlx::query!(
+            r#"UPDATE intent_cache SET processed = true, processed_at = NOW() WHERE id = $1"#,
+            intent_id
+        )
+        .execute(pool)
+        .await?;
 
         if result.rows_affected() == 0 {
             warn!("no intent found to mark as processed: {}", intent_id);
@@ -524,27 +1103,47 @@ impl Queries {
     pub async fn get_subscription_stats(&self, chain: &str) -> Result<(i64, i64, i64)> {
         info!("fetching subscription stats for chain: {}", chain);
 
-        let row = query(
+        if let Some(storage) = self.stub_storage() {
+            let subscriptions = storage.subscriptions.lock().unwrap();
+            let mut active = 0;
+            let mut paused = 0;
+            let mut total = 0;
+
+            for subscription in subscriptions.values().filter(|sub| sub.chain == chain) {
+                total += 1;
+                if subscription.status == "ACTIVE" {
+                    active += 1;
+                } else if subscription.status == "PAUSED" {
+                    paused += 1;
+                }
+            }
+
+            info!(
+                "subscription stats for chain {}: active={}, paused={}, total={} (stub)",
+                chain, active, paused, total
+            );
+            return Ok((active, paused, total));
+        }
+
+        let pool = self.require_postgres("get_subscription_stats")?;
+
+        let row = sqlx::query!(
             r#"
             SELECT 
-                COUNT(*) FILTER (WHERE status = 'ACTIVE') as active_count,
-                COUNT(*) FILTER (WHERE status = 'PAUSED') as paused_count,
-                COUNT(*) as total_count
+                COUNT(*) FILTER (WHERE status = 'ACTIVE') as "active_count!",
+                COUNT(*) FILTER (WHERE status = 'PAUSED') as "paused_count!",
+                COUNT(*) as "total_count!"
             FROM subscriptions 
             WHERE chain = $1
             "#,
+            chain
         )
-        .bind(chain)
-        .fetch_one(&self.pool)
+        .fetch_one(pool)
         .await?;
 
-        let active: Option<i64> = row.get("active_count");
-        let paused: Option<i64> = row.get("paused_count");
-        let total: Option<i64> = row.get("total_count");
-
-        let active = active.unwrap_or(0);
-        let paused = paused.unwrap_or(0);
-        let total = total.unwrap_or(0);
+        let active = row.active_count;
+        let paused = row.paused_count;
+        let total = row.total_count;
 
         info!(
             "subscription stats for chain {}: active={}, paused={}, total={}",
@@ -556,9 +1155,22 @@ impl Queries {
     pub async fn cleanup_expired_intents(&self) -> Result<i64> {
         info!("cleaning up expired intents");
 
-        let result = query("DELETE FROM intent_cache WHERE expiry < NOW() AND processed = false")
-            .execute(&self.pool)
-            .await?;
+        if let Some(storage) = self.stub_storage() {
+            let mut intents = storage.intent_cache.lock().unwrap();
+            let now = Utc::now();
+            let before = intents.len();
+            intents.retain(|intent| intent.expiry >= now || intent.processed);
+            let deleted = (before - intents.len()) as i64;
+            info!("cleaned up {} expired intents (stub)", deleted);
+            return Ok(deleted);
+        }
+
+        let pool = self.require_postgres("cleanup_expired_intents")?;
+
+        let result =
+            sqlx::query!(r#"DELETE FROM intent_cache WHERE expiry < NOW() AND processed = false"#)
+                .execute(pool)
+                .await?;
 
         let deleted = result.rows_affected() as i64;
         info!("cleaned up {} expired intents", deleted);
@@ -576,21 +1188,84 @@ impl Queries {
             limit, offset
         );
 
-        let subscriptions = query_as::<_, Subscription>(
+        if let Some(storage) = self.stub_storage() {
+            let now = Utc::now();
+            let subscriptions = storage.subscriptions.lock().unwrap();
+
+            let mut results: Vec<Subscription> = subscriptions
+                .values()
+                .filter(|sub| {
+                    sub.status == "ACTIVE"
+                        && sub.expiry > now
+                        && sub.executed_payments < sub.max_payments
+                        && sub.next_payment_due <= now
+                        && sub.id.len() <= 66
+                })
+                .cloned()
+                .collect();
+
+            results.sort_by(|a, b| {
+                a.next_payment_due
+                    .cmp(&b.next_payment_due)
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+
+            let start = offset.max(0) as usize;
+            let end = start + limit.max(0) as usize;
+            let sliced: Vec<Subscription> = results
+                .into_iter()
+                .skip(start)
+                .take(end.saturating_sub(start))
+                .collect();
+
+            info!(
+                "found {} due subscriptions (stub, limit: {}, offset: {})",
+                sliced.len(),
+                limit,
+                offset
+            );
+            return Ok(sliced);
+        }
+
+        let pool = self.require_postgres("get_due_subscriptions_with_limit")?;
+
+        let subscriptions = sqlx::query_as!(
+            Subscription,
             r#"
-            SELECT * FROM subscriptions 
+            SELECT
+                id,
+                subscriber,
+                merchant,
+                amount,
+                interval_seconds,
+                start_time,
+                max_payments,
+                max_total_amount,
+                expiry,
+                nonce,
+                status,
+                executed_payments,
+                total_paid,
+                next_payment_due,
+                failure_count,
+                created_at,
+                updated_at,
+                chain,
+                avail_block_number,
+                avail_extrinsic_index
+            FROM subscriptions 
             WHERE status = 'ACTIVE' 
-            AND expiry > NOW()
-            AND executed_payments < max_payments
-            AND next_payment_due <= NOW()
-            AND length(id) <= 66  -- DoS protection: limit id length
-            ORDER BY next_payment_due ASC, id ASC  -- deterministic ordering
+                AND expiry > NOW()
+                AND executed_payments < max_payments
+                AND next_payment_due <= NOW()
+                AND length(id) <= 66
+            ORDER BY next_payment_due ASC, id ASC
             LIMIT $1 OFFSET $2
             "#,
+            limit,
+            offset
         )
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&self.pool)
+        .fetch_all(pool)
         .await?;
 
         info!(
@@ -631,7 +1306,25 @@ impl Queries {
             subscription_id
         );
 
-        let result = query(
+        if let Some(storage) = self.stub_storage() {
+            let mut subscriptions = storage.subscriptions.lock().unwrap();
+            let subscription = subscriptions.get_mut(subscription_id).ok_or_else(|| {
+                RelayerError::NotFound(format!("subscription not found: {}", subscription_id))
+            })?;
+            subscription.executed_payments = on_chain_payments;
+            subscription.status = on_chain_status.to_string();
+            subscription.nonce = on_chain_nonce;
+            subscription.updated_at = Utc::now();
+            info!(
+                "synchronised subscription {} with blockchain state (stub)",
+                subscription_id
+            );
+            return Ok(());
+        }
+
+        let pool = self.require_postgres("sync_subscription_with_blockchain")?;
+
+        let result = sqlx::query!(
             r#"
             UPDATE subscriptions 
             SET executed_payments = $1,
@@ -640,12 +1333,12 @@ impl Queries {
                 updated_at = NOW()
             WHERE id = $4
             "#,
+            on_chain_payments,
+            on_chain_status,
+            on_chain_nonce,
+            subscription_id
         )
-        .bind(on_chain_payments)
-        .bind(on_chain_status)
-        .bind(on_chain_nonce)
-        .bind(subscription_id)
-        .execute(&self.pool)
+        .execute(pool)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -669,7 +1362,24 @@ impl Queries {
             execution_record.subscription_id
         );
 
-        query(
+        if let Some(storage) = self.stub_storage() {
+            let mut records = storage.execution_records.lock().unwrap();
+            let mut record_clone = execution_record.clone();
+            if record_clone.id == 0 {
+                record_clone.id = storage.next_execution_id();
+            }
+            records.push(record_clone);
+            info!(
+                "successfully inserted execution record for subscription: {} (stub)",
+                execution_record.subscription_id
+            );
+            return Ok(());
+        }
+
+        let pool = self.require_postgres("insert_execution_record")?;
+        let record = execution_record.clone();
+
+        sqlx::query!(
             r#"
             INSERT INTO executions (
                 subscription_id, relayer_address, payment_number, amount_paid,
@@ -677,18 +1387,18 @@ impl Queries {
                 gas_used, gas_price, status, executed_at, chain
             ) VALUES ($1, '', $2, $3, $4, '', $5, $6, $7, $8, 'SUCCESS', $9, $10)
             "#,
+            record.subscription_id,
+            record.payment_number,
+            record.payment_amount,
+            record.fee_paid,
+            record.transaction_hash,
+            record.block_number,
+            record.gas_used,
+            record.gas_price,
+            record.executed_at,
+            record.chain
         )
-        .bind(&execution_record.subscription_id)
-        .bind(&execution_record.payment_number)
-        .bind(&execution_record.payment_amount)
-        .bind(&execution_record.fee_paid)
-        .bind(&execution_record.transaction_hash)
-        .bind(&execution_record.block_number)
-        .bind(&execution_record.gas_used)
-        .bind(&execution_record.gas_price)
-        .bind(&execution_record.executed_at)
-        .bind(&execution_record.chain)
-        .execute(&self.pool)
+        .execute(pool)
         .await?;
 
         info!(
@@ -710,7 +1420,25 @@ impl Queries {
             subscription_id, payments_made, next_payment_time, failure_count
         );
 
-        let result = query(
+        if let Some(storage) = self.stub_storage() {
+            let mut subscriptions = storage.subscriptions.lock().unwrap();
+            let subscription = subscriptions.get_mut(subscription_id).ok_or_else(|| {
+                RelayerError::NotFound(format!("subscription not found: {}", subscription_id))
+            })?;
+            subscription.executed_payments = payments_made;
+            subscription.next_payment_due = next_payment_time;
+            subscription.failure_count = failure_count;
+            subscription.updated_at = Utc::now();
+            info!(
+                "successfully updated subscription {} after payment (stub)",
+                subscription_id
+            );
+            return Ok(());
+        }
+
+        let pool = self.require_postgres("update_subscription_after_payment")?;
+
+        let result = sqlx::query!(
             r#"
             UPDATE subscriptions 
             SET executed_payments = $1,
@@ -719,12 +1447,12 @@ impl Queries {
                 updated_at = NOW()
             WHERE id = $4
             "#,
+            payments_made,
+            next_payment_time,
+            failure_count,
+            subscription_id
         )
-        .bind(payments_made)
-        .bind(next_payment_time)
-        .bind(failure_count)
-        .bind(subscription_id)
-        .execute(&self.pool)
+        .execute(pool)
         .await?;
 
         if result.rows_affected() == 0 {
@@ -778,19 +1506,116 @@ impl Queries {
             ));
         }
 
-        let mut tx = self.pool.begin().await.map_err(|e| {
+        if let Some(storage) = self.stub_storage() {
+            let mut subscriptions = storage.subscriptions.lock().unwrap();
+            let subscription = subscriptions.get_mut(subscription_id).ok_or_else(|| {
+                RelayerError::NotFound(format!("subscription not found: {}", subscription_id))
+            })?;
+
+            if new_payments_made != subscription.executed_payments + 1 {
+                return Err(RelayerError::Validation(
+                    "invalid payment count increment".to_string(),
+                ));
+            }
+
+            let current_total =
+                U256::from_dec_str(&subscription.total_paid).unwrap_or_else(|_| U256::zero());
+            let payment_amount =
+                U256::from_dec_str(&execution_record.payment_amount).map_err(|_| {
+                    RelayerError::Validation("invalid payment amount format".to_string())
+                })?;
+            let new_total_paid = current_total.checked_add(payment_amount).ok_or_else(|| {
+                RelayerError::Validation("total_paid calculation overflow".to_string())
+            })?;
+
+            subscription.executed_payments = new_payments_made;
+            subscription.total_paid = new_total_paid.to_string();
+            subscription.next_payment_due = next_payment_time;
+            subscription.failure_count = failure_count;
+            subscription.updated_at = Utc::now();
+
+            drop(subscriptions);
+
+            // store execution record for observability
+            let mut record_clone = execution_record.clone();
+            if record_clone.id == 0 {
+                record_clone.id = storage.next_execution_id();
+            }
+            storage
+                .execution_records
+                .lock()
+                .unwrap()
+                .push(record_clone.clone());
+
+            // materialise execution entry
+            let execution_entry = Execution {
+                id: record_clone.id,
+                subscription_id: subscription_id.to_string(),
+                relayer_address: String::new(),
+                payment_number: record_clone.payment_number,
+                amount_paid: record_clone.payment_amount.clone(),
+                protocol_fee: record_clone.fee_paid.clone(),
+                merchant_amount: record_clone.payment_amount.clone(),
+                transaction_hash: record_clone.transaction_hash.clone(),
+                block_number: record_clone.block_number,
+                gas_used: record_clone.gas_used.clone(),
+                gas_price: record_clone.gas_price.clone(),
+                status: "SUCCESS".to_string(),
+                error_message: None,
+                executed_at: record_clone.executed_at,
+                chain: record_clone.chain.clone(),
+            };
+            storage.executions.lock().unwrap().push(execution_entry);
+
+            info!(
+                "successfully recorded execution and updated subscription for {} (stub)",
+                subscription_id
+            );
+            return Ok(());
+        }
+
+        let pool = self.require_postgres("record_execution_and_update_subscription")?;
+
+        let mut tx = pool.begin().await.map_err(|e| {
             RelayerError::DatabaseError(format!("failed to begin transaction: {}", e))
         })?;
 
         // check subscription exists and get current state for validation
-        let current_subscription =
-            query_as::<_, Subscription>("SELECT * FROM subscriptions WHERE id = $1 FOR UPDATE")
-                .bind(subscription_id)
-                .fetch_optional(&mut *tx)
-                .await?
-                .ok_or_else(|| {
-                    RelayerError::NotFound(format!("subscription not found: {}", subscription_id))
-                })?;
+        let current_subscription = sqlx::query_as!(
+            Subscription,
+            r#"
+            SELECT
+                id,
+                subscriber,
+                merchant,
+                amount,
+                interval_seconds,
+                start_time,
+                max_payments,
+                max_total_amount,
+                expiry,
+                nonce,
+                status,
+                executed_payments,
+                total_paid,
+                next_payment_due,
+                failure_count,
+                created_at,
+                updated_at,
+                chain,
+                avail_block_number,
+                avail_extrinsic_index
+            FROM subscriptions
+            WHERE id = $1
+            FOR UPDATE
+            "#,
+            subscription_id
+        )
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| {
+            RelayerError::NotFound(format!("subscription not found: {}", subscription_id))
+        })?;
 
         // validate payment increment is correct
         if new_payments_made != current_subscription.executed_payments + 1 {
@@ -800,7 +1625,7 @@ impl Queries {
         }
 
         // insert execution record with comprehensive data
-        query(
+        sqlx::query!(
             r#"
             INSERT INTO executions (
                 subscription_id, relayer_address, payment_number, amount_paid,
@@ -808,17 +1633,17 @@ impl Queries {
                 gas_used, gas_price, status, executed_at, chain
             ) VALUES ($1, '', $2, $3, $4, '', $5, $6, $7, $8, 'SUCCESS', $9, $10)
             "#,
+            execution_record.subscription_id,
+            execution_record.payment_number,
+            execution_record.payment_amount,
+            execution_record.fee_paid,
+            execution_record.transaction_hash,
+            execution_record.block_number,
+            execution_record.gas_used,
+            execution_record.gas_price,
+            execution_record.executed_at,
+            execution_record.chain
         )
-        .bind(&execution_record.subscription_id)
-        .bind(&execution_record.payment_number)
-        .bind(&execution_record.payment_amount)
-        .bind(&execution_record.fee_paid)
-        .bind(&execution_record.transaction_hash)
-        .bind(&execution_record.block_number)
-        .bind(&execution_record.gas_used)
-        .bind(&execution_record.gas_price)
-        .bind(&execution_record.executed_at)
-        .bind(&execution_record.chain)
         .execute(&mut *tx)
         .await?;
 
@@ -839,7 +1664,7 @@ impl Queries {
                 RelayerError::Validation("total_paid calculation overflow".to_string())
             })?;
 
-        let result = query(
+        let result = sqlx::query!(
             r#"
             UPDATE subscriptions 
             SET executed_payments = $1,
@@ -849,12 +1674,12 @@ impl Queries {
                 updated_at = NOW()
             WHERE id = $5
             "#,
+            new_payments_made,
+            new_total_paid.to_string(),
+            next_payment_time,
+            failure_count,
+            subscription_id
         )
-        .bind(new_payments_made)
-        .bind(new_total_paid.to_string())
-        .bind(next_payment_time)
-        .bind(failure_count)
-        .bind(subscription_id)
         .execute(&mut *tx)
         .await?;
 

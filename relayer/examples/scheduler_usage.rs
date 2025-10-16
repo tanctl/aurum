@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let database = Database::new(&config.database_url).await?;
     let queries = Arc::new(database.queries());
-    let pool = database.pool().clone(); // get pool for distributed locking
+    let pool = database.expect_pool().clone(); // get pool for distributed locking
 
     let blockchain_client = Arc::new(BlockchainClient::new(&config).await?);
     let avail_client = Arc::new(AvailClient::new(&config).await?);

@@ -1,0 +1,52 @@
+type Subscription @entity {
+  id: ID!
+  subscriptionId: Bytes!
+  subscriber: Bytes!
+  merchant: Bytes!
+  amount: BigInt!
+  interval: BigInt!
+  startTime: BigInt!
+  maxPayments: Int!
+  maxTotalAmount: BigInt!
+  expiry: BigInt!
+  status: String!
+  paymentsExecuted: Int!
+  totalAmountPaid: BigInt!
+  createdAt: BigInt!
+  createdAtBlock: BigInt!
+  chainId: Int!
+}
+
+type Payment @entity {
+  id: ID!
+  subscription: Subscription!
+  paymentNumber: Int!
+  amount: BigInt!
+  fee: BigInt!
+  relayer: Bytes!
+  txHash: Bytes!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  chainId: Int!
+}
+
+type MerchantStats @entity {
+  id: ID!
+  merchant: Bytes!
+  totalSubscriptions: Int!
+  activeSubscriptions: Int!
+  totalRevenue: BigInt!
+  totalPayments: Int!
+  chainId: Int!
+}
+
+type RelayerStats @entity {
+  id: ID!
+  relayer: Bytes!
+  successfulExecutions: Int!
+  failedExecutions: Int!
+  totalFeesEarned: BigInt!
+  isActive: Boolean!
+  stakedAmount: BigInt!
+  chainId: Int!
+}

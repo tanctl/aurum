@@ -103,7 +103,7 @@ pub struct SubscriptionResponse {
     pub avail_extrinsic: Option<u64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct TransactionData {
     #[serde(rename = "subscriptionId")]
     pub subscription_id: String,
@@ -205,68 +205,6 @@ pub struct EnvioError {
 pub struct EnvioLocation {
     pub line: u32,
     pub column: u32,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PaymentExecutedEvents {
-    #[serde(rename = "PaymentExecuted")]
-    pub payment_executed: Vec<PaymentExecutedEvent>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PaymentExecutedEvent {
-    pub id: String,
-    #[serde(rename = "subscriptionId")]
-    pub subscription_id: String,
-    pub subscriber: String,
-    pub merchant: String,
-    #[serde(rename = "paymentNumber")]
-    pub payment_number: String,
-    pub amount: String,
-    pub fee: String,
-    pub relayer: String,
-    #[serde(rename = "transactionHash")]
-    pub transaction_hash: String,
-    #[serde(rename = "blockNumber")]
-    pub block_number: String,
-    #[serde(rename = "blockTimestamp")]
-    pub block_timestamp: String,
-    pub chain_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct MerchantAggregates {
-    #[serde(rename = "PaymentExecuted_aggregate")]
-    pub payment_executed_aggregate: PaymentAggregateData,
-    #[serde(rename = "Subscription_aggregate")]
-    pub subscription_aggregate: SubscriptionAggregateData,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PaymentAggregateData {
-    pub aggregate: Option<PaymentAggregateFields>,
-    pub nodes: Vec<PaymentExecutedEvent>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PaymentAggregateFields {
-    pub count: String,
-    pub sum: Option<PaymentSum>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PaymentSum {
-    pub amount: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SubscriptionAggregateData {
-    pub aggregate: Option<SubscriptionAggregateFields>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SubscriptionAggregateFields {
-    pub count: String,
 }
 
 // custom deserializers for validation

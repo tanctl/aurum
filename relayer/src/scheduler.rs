@@ -1165,6 +1165,7 @@ async fn ensure_intent_cached_job_safe(
     queries: &Arc<Queries>,
     avail_client: &AvailClient,
 ) -> Result<()> {
+    // skip remote fetch when running in stub mode to avoid noisy logs
     if matches!(avail_client.mode(), AvailClientMode::Stub) {
         return Ok(());
     }

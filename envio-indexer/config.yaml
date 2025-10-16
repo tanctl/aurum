@@ -1,0 +1,113 @@
+name: aurum-hyperindex
+version: 1
+
+networks:
+  sepolia:
+    chainId: 11155111
+    rpc:
+      url: ${SEPOLIA_RPC_URL}
+  baseSepolia:
+    chainId: 84532
+    rpc:
+      url: ${BASE_SEPOLIA_RPC_URL}
+
+dataSources:
+  - name: subscriptionManagerSepolia
+    kind: ethereum/contract
+    network: sepolia
+    source:
+      address: ${SUBSCRIPTION_MANAGER_ADDRESS_SEPOLIA}
+      abi: SubscriptionManager
+      startBlock: ${SUBSCRIPTION_MANAGER_START_BLOCK_SEPOLIA}
+    mapping:
+      file: ./src/EventHandlers.ts
+      entities:
+        - Subscription
+        - Payment
+        - MerchantStats
+        - RelayerStats
+      eventHandlers:
+        - event: SubscriptionCreated(bytes32,address,address,uint256,uint256,uint256,uint256,uint256)
+          handler: handleSubscriptionCreated
+        - event: SubscriptionPaused(bytes32,address)
+          handler: handleSubscriptionPaused
+        - event: SubscriptionResumed(bytes32,address)
+          handler: handleSubscriptionResumed
+        - event: SubscriptionCancelled(bytes32,address,address)
+          handler: handleSubscriptionCancelled
+        - event: PaymentExecuted(bytes32,address,address,uint256,uint256,uint256,address)
+          handler: handlePaymentExecuted
+        - event: PaymentFailed(bytes32,address,address,uint256,string)
+          handler: handlePaymentFailed
+
+  - name: subscriptionManagerBaseSepolia
+    kind: ethereum/contract
+    network: baseSepolia
+    source:
+      address: ${SUBSCRIPTION_MANAGER_ADDRESS_BASE}
+      abi: SubscriptionManager
+      startBlock: ${SUBSCRIPTION_MANAGER_START_BLOCK_BASE}
+    mapping:
+      file: ./src/EventHandlers.ts
+      entities:
+        - Subscription
+        - Payment
+        - MerchantStats
+        - RelayerStats
+      eventHandlers:
+        - event: SubscriptionCreated(bytes32,address,address,uint256,uint256,uint256,uint256,uint256)
+          handler: handleSubscriptionCreated
+        - event: SubscriptionPaused(bytes32,address)
+          handler: handleSubscriptionPaused
+        - event: SubscriptionResumed(bytes32,address)
+          handler: handleSubscriptionResumed
+        - event: SubscriptionCancelled(bytes32,address,address)
+          handler: handleSubscriptionCancelled
+        - event: PaymentExecuted(bytes32,address,address,uint256,uint256,uint256,address)
+          handler: handlePaymentExecuted
+        - event: PaymentFailed(bytes32,address,address,uint256,string)
+          handler: handlePaymentFailed
+
+  - name: relayerRegistrySepolia
+    kind: ethereum/contract
+    network: sepolia
+    source:
+      address: ${RELAYER_REGISTRY_ADDRESS_SEPOLIA}
+      abi: RelayerRegistry
+      startBlock: ${RELAYER_REGISTRY_START_BLOCK_SEPOLIA}
+    mapping:
+      file: ./src/EventHandlers.ts
+      entities:
+        - RelayerStats
+      eventHandlers:
+        - event: RelayerRegistered(address,uint256)
+          handler: handleRelayerRegistered
+        - event: RelayerUnregistered(address,uint256)
+          handler: handleRelayerUnregistered
+        - event: ExecutionRecorded(address,bool,uint256)
+          handler: handleExecutionRecorded
+
+  - name: relayerRegistryBaseSepolia
+    kind: ethereum/contract
+    network: baseSepolia
+    source:
+      address: ${RELAYER_REGISTRY_ADDRESS_BASE}
+      abi: RelayerRegistry
+      startBlock: ${RELAYER_REGISTRY_START_BLOCK_BASE}
+    mapping:
+      file: ./src/EventHandlers.ts
+      entities:
+        - RelayerStats
+      eventHandlers:
+        - event: RelayerRegistered(address,uint256)
+          handler: handleRelayerRegistered
+        - event: RelayerUnregistered(address,uint256)
+          handler: handleRelayerUnregistered
+        - event: ExecutionRecorded(address,bool,uint256)
+          handler: handleExecutionRecorded
+
+abis:
+  - name: SubscriptionManager
+    file: ../artifacts/contracts/SubscriptionManager.sol/SubscriptionManager.json
+  - name: RelayerRegistry
+    file: ../artifacts/contracts/RelayerRegistry.sol/RelayerRegistry.json

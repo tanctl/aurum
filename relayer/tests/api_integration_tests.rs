@@ -3,18 +3,17 @@ use axum::{
     http::{Request, StatusCode},
 };
 use relayer::api::types::*;
-use relayer::{AppState, AvailClient, BlockchainClient, Config, Database};
+use relayer::{AppState, AvailClient, BlockchainClient, Config, Database, EnvioClient};
 use std::sync::Arc;
 use tower::util::ServiceExt;
 
 // helper function to create test app state
 async fn create_test_app_state() -> Arc<AppState> {
     let config = Config {
-        database_url: std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
-            "postgresql://postgres:postgres@localhost:5432/relayer_test".to_string()
-        }),
-        ethereum_rpc_url: "https://sepolia.infura.io/v3/test".to_string(),
-        base_rpc_url: "https://base-mainnet.infura.io/v3/test".to_string(),
+        database_url: std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| "stub".to_string()),
+        ethereum_rpc_url: std::env::var("TEST_ETHEREUM_RPC_URL")
+            .unwrap_or_else(|_| "stub".to_string()),
+        base_rpc_url: std::env::var("TEST_BASE_RPC_URL").unwrap_or_else(|_| "stub".to_string()),
         relayer_private_key: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
             .to_string(),
         subscription_manager_address_sepolia: "0x1234567890123456789012345678901234567890"
@@ -28,11 +27,12 @@ async fn create_test_app_state() -> Arc<AppState> {
         max_executions_per_batch: 100,
         max_gas_price_gwei: 100,
         relayer_address: "0x1234567890123456789012345678901234567890".to_string(),
-        envio_hyperindex_url: Some("https://test.envio.dev/v1/graphql".to_string()),
         avail_rpc_url: Some("stub".to_string()),
         avail_application_id: None,
         avail_auth_token: None,
         avail_secret_uri: None,
+        envio_graphql_endpoint: None,
+        envio_explorer_url: None,
     };
 
     let database = Database::new(&config.database_url)
@@ -53,11 +53,14 @@ async fn create_test_app_state() -> Arc<AppState> {
         .await
         .expect("failed to create avail client");
 
+    let envio_client = EnvioClient::new_stub();
+
     Arc::new(AppState {
         config,
         database,
         blockchain_client,
         avail_client,
+        envio_client,
     })
 }
 
@@ -320,14 +323,15 @@ async fn test_error_response_format() {
     assert!(error_response.get("code").is_some());
 }
 
-// mock test for envio integration (would need actual mock server in full test suite)
+// mock test for envio integration (stub mode)
 #[tokio::test]
-async fn test_envio_client_construction() {
-    use relayer::api::envio::EnvioClient;
-
-    let client = EnvioClient::new("https://test.envio.dev/v1/graphql".to_string());
-    let explorer_url = client.get_explorer_url("0x1234567890123456789012345678901234567890");
-
-    assert!(explorer_url.contains("explorer"));
-    assert!(explorer_url.contains("0x1234567890123456789012345678901234567890"));
+async fn test_envio_client_stub_mode() {
+    let client = EnvioClient::new_stub();
+    assert!(client.health_check().await.unwrap());
+    assert!(client
+        .get_merchant_transactions("0x123", 0, 10)
+        .await
+        .unwrap()
+        .transactions
+        .is_empty());
 }

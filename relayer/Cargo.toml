@@ -11,13 +11,18 @@ path = "src/main.rs"
 name = "relayer"
 path = "src/lib.rs"
 
+[features]
+default = []
+sqlx-prepare-cli = ["pg-embed"]
+
 [dependencies]
 tokio = { version = "1.35", features = ["full"] }
 axum = "0.7"
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "json"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "json", "macros", "bigdecimal", "migrate"] }
 ethers = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+which = "4.4"
 dotenv = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 tokio-cron-scheduler = "0.10"
@@ -33,6 +38,8 @@ tower-http = { version = "0.4", features = ["cors", "trace", "fs"] }
 uuid = { version = "1.6", features = ["v4", "serde"] }
 http = "0.2"
 avail-rust-client = { version = "0.4.1-rc.1", default-features = false, features = ["native", "reqwest"] }
+ethers-solc = { version = "2.0", default-features = false, features = ["svm-solc"] }
+pg-embed = { version = "0.7.1", default-features = false, features = ["rt_tokio"], optional = true }
 
 [[example]]
 name = "blockchain_usage"
@@ -44,3 +51,7 @@ path = "examples/scheduler_usage.rs"
 
 [dev-dependencies]
 tokio-test = "0.4"
+mockito = "1.2"
+serde_json = "1.0"
+pg-embed = { version = "0.7.1", default-features = false, features = ["rt_tokio"] }
+which = "4.4"

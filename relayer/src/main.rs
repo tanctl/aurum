@@ -7,7 +7,7 @@ use tracing::{error, info, Level};
 use tracing_subscriber;
 
 use relayer::api::ApiServer;
-use relayer::{AppState, AvailClient, BlockchainClient, Config, Database, Scheduler};
+use relayer::{AppState, AvailClient, BlockchainClient, Config, Database, EnvioClient, Scheduler};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -41,9 +41,6 @@ async fn main() -> Result<()> {
         "max executions per batch: {}",
         config.max_executions_per_batch
     );
-    if let Some(ref envio_url) = config.envio_hyperindex_url {
-        info!("envio hyperindex url: {}", envio_url);
-    }
     if let Some(ref avail_url) = config.avail_rpc_url {
         info!("avail rpc url: {}", avail_url);
     }
@@ -75,12 +72,31 @@ async fn main() -> Result<()> {
         e
     })?;
 
+    let envio_client = match (&config.envio_graphql_endpoint, &config.envio_explorer_url) {
+        (Some(graphql_endpoint), Some(explorer_url)) if !graphql_endpoint.trim().is_empty() => {
+            match EnvioClient::new(graphql_endpoint.clone(), explorer_url.clone()) {
+                Ok(client) => client,
+                Err(err) => {
+                    // fall back to stub so api still runs if envio is temporarily unavailable
+                    error!("failed to initialise envio client: {}", err);
+                    EnvioClient::new_stub()
+                }
+            }
+        }
+        _ => {
+            // default to stub when no envio endpoint is configured
+            info!("envio configuration not provided, running in stub mode");
+            EnvioClient::new_stub()
+        }
+    };
+
     // create application state
     let app_state = Arc::new(AppState {
         config: config.clone(),
         database,
         blockchain_client,
         avail_client: avail_client.clone(),
+        envio_client,
     });
 
     info!("relayer service initialized successfully");
@@ -89,8 +105,8 @@ async fn main() -> Result<()> {
     let scheduler = Scheduler::new(
         Arc::new(app_state.database.queries().clone()),
         Arc::new(app_state.blockchain_client.clone()),
-        Arc::new(avail_client.clone()),
-        app_state.database.pool().clone(),
+        Arc::new(app_state.avail_client.clone()),
+        app_state.database.expect_pool().clone(),
     )
     .await
     .map_err(|e| {

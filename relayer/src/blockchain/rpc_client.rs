@@ -8,8 +8,16 @@ use ethers::types::{Address, TransactionReceipt, H256, U256};
 use std::sync::Arc;
 use tracing::{info, warn};
 
+const STUB_SEPOLIA_CHAIN_ID: u64 = 11155111;
+const STUB_BASE_CHAIN_ID: u64 = 8453;
+
 #[derive(Clone)]
 pub struct BlockchainClient {
+    real: Option<Arc<RealBlockchainClient>>,
+    stub: Option<Arc<StubBlockchainClient>>,
+}
+
+struct RealBlockchainClient {
     sepolia_provider: Arc<SignerMiddleware<Provider<Http>, LocalWallet>>,
     base_provider: Arc<SignerMiddleware<Provider<Http>, LocalWallet>>,
     sepolia_subscription_manager:
@@ -17,6 +25,12 @@ pub struct BlockchainClient {
     base_subscription_manager: SubscriptionManager<SignerMiddleware<Provider<Http>, LocalWallet>>,
     sepolia_pyusd: MockPYUSD<SignerMiddleware<Provider<Http>, LocalWallet>>,
     base_pyusd: MockPYUSD<SignerMiddleware<Provider<Http>, LocalWallet>>,
+    relayer_address: Address,
+    sepolia_chain_id: u64,
+    base_chain_id: u64,
+}
+
+struct StubBlockchainClient {
     relayer_address: Address,
     sepolia_chain_id: u64,
     base_chain_id: u64,
@@ -50,8 +64,193 @@ pub struct ExecutionResult {
 
 impl BlockchainClient {
     pub async fn new(config: &Config) -> Result<Self> {
-        info!("initializing blockchain client with providers for sepolia and base");
+        let eth_stub = is_stub_endpoint(&config.ethereum_rpc_url);
+        let base_stub = is_stub_endpoint(&config.base_rpc_url);
 
+        if eth_stub ^ base_stub {
+            warn!("detected mixed stub and real rpc urls; running blockchain client in stub mode");
+        }
+
+        if eth_stub || base_stub {
+            info!("initializing blockchain client in stub mode");
+            let stub = StubBlockchainClient::new(config)?;
+            Ok(Self {
+                real: None,
+                stub: Some(Arc::new(stub)),
+            })
+        } else {
+            info!("initializing blockchain client with providers for sepolia and base");
+            let real = RealBlockchainClient::new(config).await?;
+            info!("blockchain client initialized successfully");
+            Ok(Self {
+                real: Some(Arc::new(real)),
+                stub: None,
+            })
+        }
+    }
+
+    pub async fn get_subscription(
+        &self,
+        subscription_id: [u8; 32],
+        chain: &str,
+    ) -> Result<Option<SubscriptionData>> {
+        if let Some(real) = &self.real {
+            real.get_subscription(subscription_id, chain).await
+        } else if let Some(stub) = &self.stub {
+            stub.get_subscription(subscription_id, chain).await
+        } else {
+            Err(RelayerError::InternalError(
+                "blockchain client not initialised".to_string(),
+            ))
+        }
+    }
+
+    pub async fn check_allowance(
+        &self,
+        subscriber: Address,
+        amount: U256,
+        chain: &str,
+    ) -> Result<bool> {
+        if let Some(real) = &self.real {
+            real.check_allowance(subscriber, amount, chain).await
+        } else if let Some(stub) = &self.stub {
+            stub.check_allowance(subscriber, amount, chain).await
+        } else {
+            Err(RelayerError::InternalError(
+                "blockchain client not initialised".to_string(),
+            ))
+        }
+    }
+
+    pub async fn check_balance(&self, subscriber: Address, chain: &str) -> Result<U256> {
+        if let Some(real) = &self.real {
+            real.check_balance(subscriber, chain).await
+        } else if let Some(stub) = &self.stub {
+            stub.check_balance(subscriber, chain).await
+        } else {
+            Err(RelayerError::InternalError(
+                "blockchain client not initialised".to_string(),
+            ))
+        }
+    }
+
+    pub async fn execute_subscription(
+        &self,
+        subscription_id: [u8; 32],
+        chain: &str,
+    ) -> Result<ExecutionResult> {
+        if let Some(real) = &self.real {
+            real.execute_subscription(subscription_id, chain).await
+        } else if let Some(stub) = &self.stub {
+            stub.execute_subscription(subscription_id, chain).await
+        } else {
+            Err(RelayerError::InternalError(
+                "blockchain client not initialised".to_string(),
+            ))
+        }
+    }
+
+    pub async fn get_transaction_receipt(
+        &self,
+        tx_hash: H256,
+        chain: &str,
+    ) -> Result<Option<TransactionReceipt>> {
+        if let Some(real) = &self.real {
+            real.get_transaction_receipt(tx_hash, chain).await
+        } else if let Some(stub) = &self.stub {
+            stub.get_transaction_receipt(tx_hash, chain).await
+        } else {
+            Err(RelayerError::InternalError(
+                "blockchain client not initialised".to_string(),
+            ))
+        }
+    }
+
+    pub async fn get_current_block_number(&self, chain: &str) -> Result<u64> {
+        if let Some(real) = &self.real {
+            real.get_current_block_number(chain).await
+        } else if let Some(stub) = &self.stub {
+            stub.get_current_block_number(chain).await
+        } else {
+            Err(RelayerError::InternalError(
+                "blockchain client not initialised".to_string(),
+            ))
+        }
+    }
+
+    pub async fn validate_connection(&self, chain: &str) -> Result<()> {
+        if let Some(real) = &self.real {
+            real.validate_connection(chain).await
+        } else if let Some(stub) = &self.stub {
+            stub.validate_connection(chain).await
+        } else {
+            Err(RelayerError::InternalError(
+                "blockchain client not initialised".to_string(),
+            ))
+        }
+    }
+
+    pub async fn get_payment_count(&self, subscription_id: [u8; 32], chain: &str) -> Result<u64> {
+        if let Some(real) = &self.real {
+            real.get_payment_count(subscription_id, chain).await
+        } else if let Some(stub) = &self.stub {
+            stub.get_payment_count(subscription_id, chain).await
+        } else {
+            Err(RelayerError::InternalError(
+                "blockchain client not initialised".to_string(),
+            ))
+        }
+    }
+
+    pub async fn get_subscription_nonce(
+        &self,
+        subscription_id: [u8; 32],
+        chain: &str,
+    ) -> Result<u64> {
+        if let Some(real) = &self.real {
+            real.get_subscription_nonce(subscription_id, chain).await
+        } else if let Some(stub) = &self.stub {
+            stub.get_subscription_nonce(subscription_id, chain).await
+        } else {
+            Err(RelayerError::InternalError(
+                "blockchain client not initialised".to_string(),
+            ))
+        }
+    }
+
+    pub async fn validate_subscription_state(
+        &self,
+        subscription_id: [u8; 32],
+        chain: &str,
+    ) -> Result<SubscriptionData> {
+        if let Some(real) = &self.real {
+            real.validate_subscription_state(subscription_id, chain)
+                .await
+        } else if let Some(stub) = &self.stub {
+            stub.validate_subscription_state(subscription_id, chain)
+                .await
+        } else {
+            Err(RelayerError::InternalError(
+                "blockchain client not initialised".to_string(),
+            ))
+        }
+    }
+
+    pub fn chain_id(&self, chain: &str) -> Result<u64> {
+        if let Some(real) = &self.real {
+            real.chain_id(chain)
+        } else if let Some(stub) = &self.stub {
+            stub.chain_id(chain)
+        } else {
+            Err(RelayerError::InternalError(
+                "blockchain client not initialised".to_string(),
+            ))
+        }
+    }
+}
+
+impl RealBlockchainClient {
+    async fn new(config: &Config) -> Result<Self> {
         let sepolia_provider =
             Provider::<Http>::try_from(&config.ethereum_rpc_url).map_err(|e| {
                 RelayerError::RpcConnectionFailed(format!("sepolia rpc connection failed: {}", e))
@@ -119,8 +318,6 @@ impl BlockchainClient {
         let sepolia_pyusd = MockPYUSD::new(sepolia_pyusd_address, sepolia_client.clone());
         let base_pyusd = MockPYUSD::new(base_pyusd_address, base_client.clone());
 
-        info!("blockchain client initialized successfully");
-
         Ok(Self {
             sepolia_provider: sepolia_client,
             base_provider: base_client,
@@ -160,7 +357,7 @@ impl BlockchainClient {
         }
     }
 
-    pub async fn get_subscription(
+    async fn get_subscription(
         &self,
         subscription_id: [u8; 32],
         chain: &str,
@@ -216,7 +413,7 @@ impl BlockchainClient {
         Ok(Some(data))
     }
 
-    pub async fn check_allowance(
+    async fn check_allowance(
         &self,
         subscriber: Address,
         amount: U256,
@@ -247,7 +444,7 @@ impl BlockchainClient {
         Ok(has_sufficient_allowance)
     }
 
-    pub async fn check_balance(&self, subscriber: Address, chain: &str) -> Result<U256> {
+    async fn check_balance(&self, subscriber: Address, chain: &str) -> Result<U256> {
         info!(
             "checking balance for subscriber {:?} on chain {}",
             subscriber, chain
@@ -264,7 +461,7 @@ impl BlockchainClient {
         Ok(balance)
     }
 
-    pub async fn execute_subscription(
+    async fn execute_subscription(
         &self,
         subscription_id: [u8; 32],
         chain: &str,
@@ -363,7 +560,7 @@ impl BlockchainClient {
         Ok(result)
     }
 
-    pub async fn get_transaction_receipt(
+    async fn get_transaction_receipt(
         &self,
         tx_hash: H256,
         chain: &str,
@@ -393,7 +590,7 @@ impl BlockchainClient {
         Ok(receipt)
     }
 
-    pub async fn get_current_block_number(&self, chain: &str) -> Result<u64> {
+    async fn get_current_block_number(&self, chain: &str) -> Result<u64> {
         info!("fetching current block number for chain {}", chain);
 
         let (provider, _, _) = self.get_provider_and_contracts(chain)?;
@@ -406,7 +603,7 @@ impl BlockchainClient {
         Ok(block_number.as_u64())
     }
 
-    pub async fn validate_connection(&self, chain: &str) -> Result<()> {
+    async fn validate_connection(&self, chain: &str) -> Result<()> {
         info!("validating connection to chain {}", chain);
 
         let (provider, _, _) = self.get_provider_and_contracts(chain)?;
@@ -422,8 +619,7 @@ impl BlockchainClient {
         Ok(())
     }
 
-    // new method to get payment count from contract
-    pub async fn get_payment_count(&self, subscription_id: [u8; 32], chain: &str) -> Result<u64> {
+    async fn get_payment_count(&self, subscription_id: [u8; 32], chain: &str) -> Result<u64> {
         info!(
             "fetching payment count for subscription {:?} on chain {}",
             subscription_id, chain
@@ -446,12 +642,7 @@ impl BlockchainClient {
         Ok(payment_count.as_u64())
     }
 
-    // get subscription nonce from contract for validation
-    pub async fn get_subscription_nonce(
-        &self,
-        subscription_id: [u8; 32],
-        chain: &str,
-    ) -> Result<u64> {
+    async fn get_subscription_nonce(&self, subscription_id: [u8; 32], chain: &str) -> Result<u64> {
         info!(
             "fetching nonce for subscription {:?} on chain {}",
             subscription_id, chain
@@ -465,8 +656,7 @@ impl BlockchainClient {
         Ok(subscription_data.nonce.as_u64())
     }
 
-    // validate subscription exists and is in expected state
-    pub async fn validate_subscription_state(
+    async fn validate_subscription_state(
         &self,
         subscription_id: [u8; 32],
         chain: &str,
@@ -481,7 +671,6 @@ impl BlockchainClient {
             .await?
             .ok_or_else(|| RelayerError::NotFound("subscription not found on chain".to_string()))?;
 
-        // validate subscription is active (status = 0)
         if subscription_data.status != 0 {
             return Err(RelayerError::Validation(format!(
                 "subscription not active, status: {}",
@@ -489,7 +678,6 @@ impl BlockchainClient {
             )));
         }
 
-        // validate not expired
         let current_timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -499,7 +687,6 @@ impl BlockchainClient {
             return Err(RelayerError::Validation("subscription expired".to_string()));
         }
 
-        // validate payments not exceeded
         if subscription_data.executed_payments >= subscription_data.max_payments {
             return Err(RelayerError::Validation(
                 "subscription max payments reached".to_string(),
@@ -513,7 +700,7 @@ impl BlockchainClient {
         Ok(subscription_data)
     }
 
-    pub fn chain_id(&self, chain: &str) -> Result<u64> {
+    fn chain_id(&self, chain: &str) -> Result<u64> {
         match chain.to_lowercase().as_str() {
             "sepolia" => Ok(self.sepolia_chain_id),
             "base" => Ok(self.base_chain_id),
@@ -523,4 +710,189 @@ impl BlockchainClient {
             ))),
         }
     }
+}
+
+impl StubBlockchainClient {
+    fn new(config: &Config) -> Result<Self> {
+        let relayer_address = config
+            .relayer_address
+            .parse()
+            .unwrap_or_else(|_| Address::zero());
+
+        Ok(Self {
+            relayer_address,
+            sepolia_chain_id: STUB_SEPOLIA_CHAIN_ID,
+            base_chain_id: STUB_BASE_CHAIN_ID,
+        })
+    }
+
+    fn normalize_chain(chain: &str) -> Result<String> {
+        let normalized = chain.trim().to_ascii_lowercase();
+        match normalized.as_str() {
+            "sepolia" | "base" => Ok(normalized),
+            _ => Err(RelayerError::Validation(format!(
+                "unsupported chain: {}",
+                chain
+            ))),
+        }
+    }
+
+    async fn get_subscription(
+        &self,
+        subscription_id: [u8; 32],
+        chain: &str,
+    ) -> Result<Option<SubscriptionData>> {
+        let normalized = Self::normalize_chain(chain)?;
+        info!(
+            "stub blockchain client returning no on-chain subscription data for {:?} on {}",
+            subscription_id, normalized
+        );
+        Ok(None)
+    }
+
+    async fn check_allowance(
+        &self,
+        _subscriber: Address,
+        _amount: U256,
+        chain: &str,
+    ) -> Result<bool> {
+        let normalized = Self::normalize_chain(chain)?;
+        info!(
+            "stub blockchain client assuming allowance sufficient on {}",
+            normalized
+        );
+        Ok(true)
+    }
+
+    async fn check_balance(&self, _subscriber: Address, chain: &str) -> Result<U256> {
+        let normalized = Self::normalize_chain(chain)?;
+        info!(
+            "stub blockchain client returning large balance for chain {}",
+            normalized
+        );
+        Ok(U256::from(u128::MAX))
+    }
+
+    async fn execute_subscription(
+        &self,
+        subscription_id: [u8; 32],
+        chain: &str,
+    ) -> Result<ExecutionResult> {
+        let normalized = Self::normalize_chain(chain)?;
+        let block_number = match normalized.as_str() {
+            "sepolia" => 1_000_000,
+            "base" => 5_000_000,
+            _ => unreachable!(),
+        };
+
+        let result = ExecutionResult {
+            transaction_hash: H256::from(subscription_id),
+            block_number,
+            gas_used: U256::from(21_000u64),
+            gas_price: U256::from(1_000_000_000u64),
+            status: true,
+        };
+
+        info!(
+            "stub blockchain client returning synthetic execution result for {:?} on {}",
+            subscription_id, normalized
+        );
+        Ok(result)
+    }
+
+    async fn get_transaction_receipt(
+        &self,
+        tx_hash: H256,
+        chain: &str,
+    ) -> Result<Option<TransactionReceipt>> {
+        let normalized = Self::normalize_chain(chain)?;
+        info!(
+            "stub blockchain client has no receipt for {:?} on {}",
+            tx_hash, normalized
+        );
+        Ok(None)
+    }
+
+    async fn get_current_block_number(&self, chain: &str) -> Result<u64> {
+        let normalized = Self::normalize_chain(chain)?;
+        let block_number = match normalized.as_str() {
+            "sepolia" => 1_000_000,
+            "base" => 5_000_000,
+            _ => unreachable!(),
+        };
+        info!(
+            "stub blockchain client returning block {} for {}",
+            block_number, normalized
+        );
+        Ok(block_number)
+    }
+
+    async fn validate_connection(&self, chain: &str) -> Result<()> {
+        let normalized = Self::normalize_chain(chain)?;
+        info!(
+            "stub blockchain client connection validated for {}",
+            normalized
+        );
+        Ok(())
+    }
+
+    async fn get_payment_count(&self, subscription_id: [u8; 32], chain: &str) -> Result<u64> {
+        let normalized = Self::normalize_chain(chain)?;
+        info!(
+            "stub blockchain client returning zero payments for {:?} on {}",
+            subscription_id, normalized
+        );
+        Ok(0)
+    }
+
+    async fn get_subscription_nonce(&self, subscription_id: [u8; 32], chain: &str) -> Result<u64> {
+        let normalized = Self::normalize_chain(chain)?;
+        info!(
+            "stub blockchain client returning nonce 0 for {:?} on {}",
+            subscription_id, normalized
+        );
+        Ok(0)
+    }
+
+    async fn validate_subscription_state(
+        &self,
+        subscription_id: [u8; 32],
+        chain: &str,
+    ) -> Result<SubscriptionData> {
+        let normalized = Self::normalize_chain(chain)?;
+        info!(
+            "stub blockchain client returning synthetic subscription state for {:?} on {}",
+            subscription_id, normalized
+        );
+
+        Ok(SubscriptionData {
+            id: subscription_id,
+            subscriber: Address::zero(),
+            merchant: self.relayer_address,
+            amount: U256::from(0),
+            interval: U256::from(60u64),
+            start_time: U256::from(0),
+            max_payments: U256::from(100u64),
+            max_total_amount: U256::from(0),
+            expiry: U256::from(u64::MAX),
+            nonce: U256::from(0),
+            status: 0,
+            executed_payments: U256::zero(),
+            total_paid: U256::zero(),
+        })
+    }
+
+    fn chain_id(&self, chain: &str) -> Result<u64> {
+        let normalized = Self::normalize_chain(chain)?;
+        Ok(match normalized.as_str() {
+            "sepolia" => self.sepolia_chain_id,
+            "base" => self.base_chain_id,
+            _ => unreachable!(),
+        })
+    }
+}
+
+fn is_stub_endpoint(endpoint: &str) -> bool {
+    let normalized = endpoint.trim().to_ascii_lowercase();
+    normalized == "stub" || normalized.starts_with("stub://")
 }

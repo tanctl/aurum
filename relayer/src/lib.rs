@@ -11,6 +11,7 @@ pub mod blockchain;
 pub mod config;
 pub mod database;
 pub mod error;
+pub mod integrations;
 pub mod scheduler;
 
 pub use avail::{AvailClient, AvailClientMode};
@@ -18,6 +19,7 @@ pub use blockchain::BlockchainClient;
 pub use config::Config;
 pub use database::Database;
 pub use error::{RelayerError, Result};
+pub use integrations::envio::EnvioClient;
 pub use scheduler::Scheduler;
 
 #[derive(Clone)]
@@ -26,4 +28,5 @@ pub struct AppState {
     pub database: Database,
     pub blockchain_client: BlockchainClient,
     pub avail_client: avail::AvailClient,
+    pub envio_client: EnvioClient,
 }

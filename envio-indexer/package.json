@@ -1,0 +1,11 @@
+{
+  "name": "aurum-hyperindex",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "envio dev",
+    "deploy": "envio deploy"
+  },
+  "dependencies": {
+    "@graphprotocol/graph-ts": "^0.30.0"
+  }
+}
