@@ -1,0 +1,9 @@
+[package]
+name = "pgbootstrap"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pg-embed = { version = "0.7", default-features = false, features = ["tokio", "rt_tokio", "rt_tokio_download"] }
+anyhow = "1.0"
+tokio = { version = "1", features = ["full"] }
