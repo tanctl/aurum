@@ -1,0 +1,106 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                subscription_id,\n                relayer_address,\n                payment_number,\n                amount_paid,\n                protocol_fee,\n                merchant_amount,\n                transaction_hash,\n                block_number,\n                gas_used,\n                gas_price,\n                status,\n                error_message,\n                executed_at,\n                chain\n            FROM executions\n            WHERE subscription_id = $1\n            ORDER BY payment_number ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "subscription_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "relayer_address",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "payment_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "amount_paid",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "protocol_fee",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "merchant_amount",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "transaction_hash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "gas_used",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "gas_price",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "error_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "executed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "chain",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "62f8b53efd5c34f751fc50f677dade7d14509fe80146eaec2e0ccc7958ca2ff4"
+}

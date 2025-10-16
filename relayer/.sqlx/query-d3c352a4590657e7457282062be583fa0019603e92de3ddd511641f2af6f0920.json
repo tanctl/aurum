@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE subscriptions \n            SET executed_payments = executed_payments + 1,\n                total_paid = (total_paid::numeric + $2::numeric)::text,\n                next_payment_due = $3,\n                updated_at = NOW()\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Numeric",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d3c352a4590657e7457282062be583fa0019603e92de3ddd511641f2af6f0920"
+}

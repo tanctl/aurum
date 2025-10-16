@@ -1,0 +1,39 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO intent_cache (\n                subscription_intent, signature, subscription_id, subscriber, merchant,\n                amount, interval_seconds, start_time, max_payments, max_total_amount,\n                expiry, nonce, processed, created_at, processed_at, chain,\n                avail_block_number, avail_extrinsic_index\n            ) VALUES (\n                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18\n            )\n            ON CONFLICT (subscription_id, signature) \n            DO UPDATE SET \n                subscription_intent = EXCLUDED.subscription_intent,\n                created_at = EXCLUDED.created_at,\n                avail_block_number = EXCLUDED.avail_block_number,\n                avail_extrinsic_index = EXCLUDED.avail_extrinsic_index\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Text",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Int8",
+        "Timestamptz",
+        "Int8",
+        "Text",
+        "Timestamptz",
+        "Int8",
+        "Bool",
+        "Timestamptz",
+        "Timestamptz",
+        "Varchar",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "be67e5596890340bbfdf7d2717b72706167e3e194481eb7a98c9f8755d29b857"
+}

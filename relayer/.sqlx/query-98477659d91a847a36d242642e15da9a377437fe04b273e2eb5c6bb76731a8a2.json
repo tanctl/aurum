@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM intent_cache WHERE expiry < NOW() AND processed = false",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "98477659d91a847a36d242642e15da9a377437fe04b273e2eb5c6bb76731a8a2"
+}

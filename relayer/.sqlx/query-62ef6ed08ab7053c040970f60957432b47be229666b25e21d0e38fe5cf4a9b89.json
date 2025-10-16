@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE subscriptions \n            SET executed_payments = $1,\n                total_paid = $2,\n                next_payment_due = $3,\n                failure_count = $4,\n                updated_at = NOW()\n            WHERE id = $5\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Timestamptz",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "62ef6ed08ab7053c040970f60957432b47be229666b25e21d0e38fe5cf4a9b89"
+}

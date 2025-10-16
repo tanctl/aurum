@@ -1,0 +1,137 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                subscriber,\n                merchant,\n                amount,\n                interval_seconds,\n                start_time,\n                max_payments,\n                max_total_amount,\n                expiry,\n                nonce,\n                status,\n                executed_payments,\n                total_paid,\n                next_payment_due,\n                failure_count,\n                created_at,\n                updated_at,\n                chain,\n                avail_block_number,\n                avail_extrinsic_index\n            FROM subscriptions \n            WHERE status = 'ACTIVE' \n                AND expiry > NOW()\n                AND executed_payments < max_payments\n                AND next_payment_due <= NOW()\n                AND length(id) <= 66\n            ORDER BY next_payment_due ASC, id ASC\n            LIMIT $1 OFFSET $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "subscriber",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "merchant",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "amount",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "interval_seconds",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "start_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "max_payments",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "max_total_amount",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "expiry",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "nonce",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "executed_payments",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "total_paid",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "next_payment_due",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "failure_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 15,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "chain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 18,
+        "name": "avail_block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 19,
+        "name": "avail_extrinsic_index",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "f66f99b3af858c538aa20b9bc3a61245150a05618126b1569fcab4957bec4ce3"
+}

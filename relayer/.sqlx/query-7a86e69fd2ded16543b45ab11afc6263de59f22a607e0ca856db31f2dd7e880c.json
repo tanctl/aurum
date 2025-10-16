@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO subscriptions (\n                id,\n                subscriber,\n                merchant,\n                amount,\n                interval_seconds,\n                start_time,\n                max_payments,\n                max_total_amount,\n                expiry,\n                nonce,\n                status,\n                executed_payments,\n                total_paid,\n                next_payment_due,\n                failure_count,\n                created_at,\n                updated_at,\n                chain,\n                avail_block_number,\n                avail_extrinsic_index\n            ) VALUES (\n                $1,\n                $2,\n                $3,\n                $4,\n                $5,\n                $6,\n                $7,\n                $8,\n                $9,\n                $10,\n                $11,\n                $12,\n                $13,\n                $14,\n                $15,\n                $16,\n                $17,\n                $18,\n                $19,\n                $20\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Int8",
+        "Timestamptz",
+        "Int8",
+        "Text",
+        "Timestamptz",
+        "Int8",
+        "Varchar",
+        "Int8",
+        "Text",
+        "Timestamptz",
+        "Int8",
+        "Timestamptz",
+        "Timestamptz",
+        "Varchar",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7a86e69fd2ded16543b45ab11afc6263de59f22a607e0ca856db31f2dd7e880c"
+}

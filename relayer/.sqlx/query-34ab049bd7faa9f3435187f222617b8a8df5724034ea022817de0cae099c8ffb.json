@@ -1,0 +1,130 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                subscription_intent,\n                signature,\n                subscription_id,\n                subscriber,\n                merchant,\n                amount,\n                interval_seconds,\n                start_time,\n                max_payments,\n                max_total_amount,\n                expiry,\n                nonce,\n                processed,\n                created_at,\n                processed_at,\n                chain,\n                avail_block_number,\n                avail_extrinsic_index\n            FROM intent_cache\n            WHERE subscription_id = $1\n            ORDER BY created_at DESC\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "subscription_intent",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "signature",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "subscription_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "subscriber",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "merchant",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "amount",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "interval_seconds",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "start_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "max_payments",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "max_total_amount",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "expiry",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "nonce",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 13,
+        "name": "processed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 14,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "processed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "chain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 17,
+        "name": "avail_block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 18,
+        "name": "avail_extrinsic_index",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "34ab049bd7faa9f3435187f222617b8a8df5724034ea022817de0cae099c8ffb"
+}
