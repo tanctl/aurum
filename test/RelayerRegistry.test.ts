@@ -44,8 +44,9 @@ describe("RelayerRegistry", function () {
     await relayerRegistry.waitForDeployment();
 
     const SubscriptionManager = await ethers.getContractFactory("SubscriptionManager");
+    const supportedTokens = [await mockPYUSD.getAddress()];
     subscriptionManager = await SubscriptionManager.deploy(
-      await mockPYUSD.getAddress(),
+      supportedTokens,
       await relayerRegistry.getAddress()
     );
     await subscriptionManager.waitForDeployment();

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id,\n                subscriber,\n                merchant,\n                amount,\n                interval_seconds,\n                start_time,\n                max_payments,\n                max_total_amount,\n                expiry,\n                nonce,\n                status,\n                executed_payments,\n                total_paid,\n                next_payment_due,\n                failure_count,\n                created_at,\n                updated_at,\n                chain,\n                avail_block_number,\n                avail_extrinsic_index\n            FROM subscriptions \n            WHERE status = 'ACTIVE' \n                AND expiry > NOW()\n                AND executed_payments < max_payments\n                AND next_payment_due <= NOW()\n                AND length(id) <= 66\n            ORDER BY next_payment_due ASC, id ASC\n            LIMIT $1 OFFSET $2\n            ",
+  "query": "\n            SELECT\n                id,\n                subscriber,\n                merchant,\n                amount,\n                interval_seconds,\n                start_time,\n                max_payments,\n                max_total_amount,\n                expiry,\n                nonce,\n                token,\n                status,\n                executed_payments,\n                total_paid,\n                next_payment_due,\n                failure_count,\n                created_at,\n                updated_at,\n                chain,\n                avail_block_number,\n                avail_extrinsic_index\n            FROM subscriptions \n            WHERE status = 'ACTIVE' \n                AND expiry > NOW()\n                AND executed_payments < max_payments\n                AND next_payment_due <= NOW()\n                AND length(id) <= 66\n            ORDER BY next_payment_due ASC, id ASC\n            LIMIT $1 OFFSET $2\n            ",
   "describe": {
     "columns": [
       {
@@ -55,51 +55,56 @@
       },
       {
         "ordinal": 10,
-        "name": "status",
+        "name": "token",
         "type_info": "Varchar"
       },
       {
         "ordinal": 11,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
         "name": "executed_payments",
         "type_info": "Int8"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "total_paid",
         "type_info": "Text"
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "next_payment_due",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "failure_count",
         "type_info": "Int8"
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "chain",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 18,
+        "ordinal": 19,
         "name": "avail_block_number",
         "type_info": "Int8"
       },
       {
-        "ordinal": 19,
+        "ordinal": 20,
         "name": "avail_extrinsic_index",
         "type_info": "Int8"
       }
@@ -129,9 +134,10 @@
       false,
       false,
       false,
+      false,
       true,
       true
     ]
   },
-  "hash": "f66f99b3af858c538aa20b9bc3a61245150a05618126b1569fcab4957bec4ce3"
+  "hash": "3727b683e586d0f3419bcbea70488e06b877c8d53e1da053b01e514a7c421938"
 }

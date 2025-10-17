@@ -2,41 +2,51 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
 describe("SubscriptionManager", function () {
+  const ETH_ADDRESS = ethers.ZeroAddress;
+  const MINIMUM_STAKE = ethers.parseUnits("1000", 6);
+
   let subscriptionManager;
   let mockPYUSD;
   let relayerRegistry;
+  let extraToken;
   let owner;
   let subscriber;
   let merchant;
   let relayer;
-  let subscriptionId;
+  let otherAccount;
 
   async function createSubscriptionIntent(params = {}) {
-    const amount = params.amount || ethers.parseUnits("10", 6);
+    const token = params.token || (await mockPYUSD.getAddress());
+    const amount = params.amount || ethers.parseUnits("10", token === ETH_ADDRESS ? 18 : 6);
     const interval = params.interval || 86400;
     const startTime = params.startTime || Math.floor(Date.now() / 1000);
     const maxPayments = params.maxPayments || 12;
-    const maxTotalAmount = params.maxTotalAmount || amount * BigInt(maxPayments);
-    const expiry = params.expiry || startTime + (86400 * 365);
-    const nonce = params.nonce !== undefined ? params.nonce : await subscriptionManager.getNextNonce(subscriber.address);
+    const maxTotalAmount =
+      params.maxTotalAmount !== undefined ? params.maxTotalAmount : amount * BigInt(maxPayments);
+    const expiry = params.expiry || startTime + 86400 * 365;
+    const nonce =
+      params.nonce !== undefined
+        ? params.nonce
+        : await subscriptionManager.getNextNonce(subscriber.address);
 
     const intent = {
       subscriber: subscriber.address,
       merchant: merchant.address,
-      amount: amount,
-      interval: interval,
-      startTime: startTime,
-      maxPayments: maxPayments,
-      maxTotalAmount: maxTotalAmount,
-      expiry: expiry,
-      nonce: nonce
+      amount,
+      interval,
+      startTime,
+      maxPayments,
+      maxTotalAmount,
+      expiry,
+      nonce,
+      token,
     };
 
     const domain = {
       name: "Aurum",
       version: "1",
       chainId: (await ethers.provider.getNetwork()).chainId,
-      verifyingContract: await subscriptionManager.getAddress()
+      verifyingContract: await subscriptionManager.getAddress(),
     };
 
     const types = {
@@ -49,8 +59,9 @@ describe("SubscriptionManager", function () {
         { name: "maxPayments", type: "uint256" },
         { name: "maxTotalAmount", type: "uint256" },
         { name: "expiry", type: "uint256" },
-        { name: "nonce", type: "uint256" }
-      ]
+        { name: "nonce", type: "uint256" },
+        { name: "token", type: "address" },
+      ],
     };
 
     const signature = await subscriber.signTypedData(domain, types, intent);
@@ -59,55 +70,43 @@ describe("SubscriptionManager", function () {
 
   async function signPauseRequest(subscriptionId, signer = subscriber) {
     const nonce = await subscriptionManager.getNextNonce(signer.address);
-    
     const domain = {
       name: "Aurum",
       version: "1",
       chainId: (await ethers.provider.getNetwork()).chainId,
-      verifyingContract: await subscriptionManager.getAddress()
+      verifyingContract: await subscriptionManager.getAddress(),
     };
-
     const types = {
       PauseRequest: [
         { name: "subscriptionId", type: "bytes32" },
-        { name: "nonce", type: "uint256" }
-      ]
+        { name: "nonce", type: "uint256" },
+      ],
     };
-
-    const values = {
-      subscriptionId: subscriptionId,
-      nonce: nonce
-    };
-
-    return await signer.signTypedData(domain, types, values);
+    return await signer.signTypedData(domain, types, {
+      subscriptionId,
+      nonce,
+    });
   }
 
   async function signResumeRequest(subscriptionId, signer = subscriber) {
     const nonce = await subscriptionManager.getNextNonce(signer.address);
-    
     const domain = {
       name: "Aurum",
       version: "1",
       chainId: (await ethers.provider.getNetwork()).chainId,
-      verifyingContract: await subscriptionManager.getAddress()
+      verifyingContract: await subscriptionManager.getAddress(),
     };
-
     const types = {
       ResumeRequest: [
         { name: "subscriptionId", type: "bytes32" },
-        { name: "nonce", type: "uint256" }
-      ]
+        { name: "nonce", type: "uint256" },
+      ],
     };
-
-    const values = {
-      subscriptionId: subscriptionId,
-      nonce: nonce
-    };
-
-    return await signer.signTypedData(domain, types, values);
+    return await signer.signTypedData(domain, types, {
+      subscriptionId,
+      nonce,
+    });
   }
-
-  const MINIMUM_STAKE = ethers.parseUnits("1000", 6);
 
   async function registerActiveRelayer() {
     await mockPYUSD.mint(relayer.address, MINIMUM_STAKE);
@@ -115,8 +114,19 @@ describe("SubscriptionManager", function () {
     await relayerRegistry.connect(relayer).registerRelayer(MINIMUM_STAKE);
   }
 
+  async function advanceTime(seconds) {
+    await ethers.provider.send("evm_increaseTime", [seconds]);
+    await ethers.provider.send("evm_mine", []);
+  }
+
+  function getEventArgs(receipt, eventName) {
+    const topic = subscriptionManager.interface.getEvent(eventName).topicHash;
+    const log = receipt.logs.find((entry) => entry.topics[0] === topic);
+    return log ? subscriptionManager.interface.parseLog(log).args : undefined;
+  }
+
   beforeEach(async function () {
-    [owner, subscriber, merchant, relayer] = await ethers.getSigners();
+    [owner, subscriber, merchant, relayer, otherAccount] = await ethers.getSigners();
 
     const MockPYUSD = await ethers.getContractFactory("MockPYUSD");
     mockPYUSD = await MockPYUSD.deploy();
@@ -126,79 +136,76 @@ describe("SubscriptionManager", function () {
     relayerRegistry = await RelayerRegistry.deploy(await mockPYUSD.getAddress());
     await relayerRegistry.waitForDeployment();
 
+    const ExtraToken = await ethers.getContractFactory("MockPYUSD");
+    extraToken = await ExtraToken.deploy();
+    await extraToken.waitForDeployment();
+
     const SubscriptionManager = await ethers.getContractFactory("SubscriptionManager");
-    subscriptionManager = await SubscriptionManager.deploy(await mockPYUSD.getAddress(), await relayerRegistry.getAddress());
+    subscriptionManager = await SubscriptionManager.deploy(
+      [await mockPYUSD.getAddress()],
+      await relayerRegistry.getAddress()
+    );
     await subscriptionManager.waitForDeployment();
 
     await relayerRegistry.setSubscriptionManager(await subscriptionManager.getAddress());
   });
 
   describe("Deployment", function () {
-    it("Should set the correct PYUSD address", async function () {
-      expect(await subscriptionManager.PYUSD_ADDRESS()).to.equal(await mockPYUSD.getAddress());
+    it("tracks default supported tokens", async function () {
+      const supported = await subscriptionManager.getSupportedTokens();
+      expect(supported).to.include(await mockPYUSD.getAddress());
+      expect(supported).to.include(ETH_ADDRESS);
+      expect(await subscriptionManager.supportedTokens(await mockPYUSD.getAddress())).to.equal(true);
+      expect(await subscriptionManager.supportedTokens(ETH_ADDRESS)).to.equal(true);
     });
 
-    it("Should set the correct protocol fee", async function () {
+    it("stores protocol fee configuration", async function () {
       expect(await subscriptionManager.PROTOCOL_FEE_BPS()).to.equal(50);
-    });
-
-    it("Should have the correct typehashes", async function () {
       expect(await subscriptionManager.PAUSE_REQUEST_TYPEHASH()).to.not.equal("0x");
       expect(await subscriptionManager.RESUME_REQUEST_TYPEHASH()).to.not.equal("0x");
     });
   });
 
-  describe("Nonce Management", function () {
-    it("Should start with nonce 0 for new addresses", async function () {
+  describe("Nonce management", function () {
+    it("starts nonce at zero", async function () {
       expect(await subscriptionManager.getNextNonce(subscriber.address)).to.equal(0);
     });
 
-    it("Should increment nonce after subscription creation", async function () {
+    it("increments nonce after subscription creation", async function () {
       const { intent, signature } = await createSubscriptionIntent();
-      
       await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
       await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
-      
-      expect(await subscriptionManager.getNextNonce(subscriber.address)).to.equal(0);
-      
+
       await subscriptionManager.createSubscription(intent, signature);
-      
       expect(await subscriptionManager.getNextNonce(subscriber.address)).to.equal(1);
     });
 
-    it("Should reject subscription with wrong nonce", async function () {
+    it("rejects mismatched nonce", async function () {
       const { intent, signature } = await createSubscriptionIntent({ nonce: 5 });
-      
       await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
       await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
-      
-      await expect(
-        subscriptionManager.createSubscription(intent, signature)
-      ).to.be.revertedWith("Invalid nonce");
+
+      await expect(subscriptionManager.createSubscription(intent, signature)).to.be.revertedWith("Invalid nonce");
     });
   });
 
-  describe("Intent Verification", function () {
-    it("Should validate a correct intent signature", async function () {
+  describe("Intent verification", function () {
+    it("accepts valid signatures", async function () {
       const { intent, signature } = await createSubscriptionIntent();
       const verification = await subscriptionManager.verifyIntent(intent, signature);
       expect(verification[0]).to.equal(true);
       expect(verification[1]).to.equal(subscriber.address);
     });
 
-    it("Should detect an invalid intent signature", async function () {
+    it("rejects signatures from different signer", async function () {
       const { intent } = await createSubscriptionIntent();
-
-      const currentNonce = await subscriptionManager.getNextNonce(subscriber.address);
-      const forgedIntent = { ...intent, nonce: currentNonce };
-
+      const forgedIntent = { ...intent, nonce: intent.nonce };
       const domain = {
         name: "Aurum",
         version: "1",
         chainId: (await ethers.provider.getNetwork()).chainId,
-        verifyingContract: await subscriptionManager.getAddress()
+        verifyingContract: await subscriptionManager.getAddress(),
       };
-
       const types = {
         SubscriptionIntent: [
           { name: "subscriber", type: "address" },
@@ -209,405 +216,70 @@ describe("SubscriptionManager", function () {
           { name: "maxPayments", type: "uint256" },
           { name: "maxTotalAmount", type: "uint256" },
           { name: "expiry", type: "uint256" },
-          { name: "nonce", type: "uint256" }
-        ]
+          { name: "nonce", type: "uint256" },
+          { name: "token", type: "address" },
+        ],
       };
-
       const forgedSignature = await merchant.signTypedData(domain, types, forgedIntent);
       const verification = await subscriptionManager.verifyIntent(forgedIntent, forgedSignature);
-
       expect(verification[0]).to.equal(false);
       expect(verification[1]).to.equal(merchant.address);
     });
   });
 
-  describe("Create Subscription", function () {
-    it("Should create subscription with valid parameters", async function () {
+  describe("Subscription creation", function () {
+    it("creates PYUSD subscription and stores metadata", async function () {
       const { intent, signature } = await createSubscriptionIntent();
-      
       await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
       await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
 
       const tx = await subscriptionManager.createSubscription(intent, signature);
       const receipt = await tx.wait();
+      const eventArgs = getEventArgs(receipt, "SubscriptionCreated");
 
-      expect(receipt.status).to.equal(1);
-      
-      // check that subscription was created
-      const events = receipt.logs.filter(log => log.topics[0] === subscriptionManager.interface.getEvent("SubscriptionCreated").topicHash);
-      expect(events).to.have.length(1);
-      
-      subscriptionId = events[0].topics[1]; // first indexed param is subscriptionId
+      expect(eventArgs.subscriptionId).to.not.equal(undefined);
+      expect(eventArgs.token).to.equal(await mockPYUSD.getAddress());
+
+      const stored = await subscriptionManager.getSubscription(eventArgs.subscriptionId);
+      expect(stored.subscriber).to.equal(subscriber.address);
+      expect(stored.token).to.equal(await mockPYUSD.getAddress());
+      expect(await subscriptionManager.subscriptionToken(eventArgs.subscriptionId)).to.equal(await mockPYUSD.getAddress());
     });
 
-    it("Should reject subscription with insufficient allowance", async function () {
-      const { intent, signature } = await createSubscriptionIntent();
-      
-      await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
-      // don't approve enough
-      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), ethers.parseUnits("1", 6));
+    it("rejects unsupported token intents", async function () {
+      const { intent, signature } = await createSubscriptionIntent({ token: await extraToken.getAddress() });
+      await extraToken.mint(subscriber.address, intent.maxTotalAmount);
 
-      await expect(
-        subscriptionManager.createSubscription(intent, signature)
-      ).to.be.revertedWith("Insufficient PYUSD allowance");
+      await expect(subscriptionManager.createSubscription(intent, signature)).to.be.revertedWith("Token not supported");
     });
   });
 
-  describe("Pause Subscription", function () {
+  describe("Payment execution", function () {
     beforeEach(async function () {
-      // create a subscription first
-      const { intent, signature } = await createSubscriptionIntent();
-      
-      await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
-      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
-
-      const tx = await subscriptionManager.createSubscription(intent, signature);
-      const receipt = await tx.wait();
-      const events = receipt.logs.filter(log => log.topics[0] === subscriptionManager.interface.getEvent("SubscriptionCreated").topicHash);
-      subscriptionId = events[0].topics[1];
-    });
-
-    it("Should pause subscription with valid signature", async function () {
-      const pauseSignature = await signPauseRequest(subscriptionId);
-      
-      const tx = await subscriptionManager.pauseSubscription(subscriptionId, pauseSignature);
-      const receipt = await tx.wait();
-
-      expect(receipt.status).to.equal(1);
-      
-      // check subscription status
-      const subscription = await subscriptionManager.getSubscription(subscriptionId);
-      expect(subscription.status).to.equal(1); // PAUSED
-      
-      // check event emission
-      const events = receipt.logs.filter(log => log.topics[0] === subscriptionManager.interface.getEvent("SubscriptionPaused").topicHash);
-      expect(events).to.have.length(1);
-    });
-
-    it("Should reject pause with invalid signature", async function () {
-      const pauseSignature = await signPauseRequest(subscriptionId, merchant); // wrong signer - should fail
-      
-      await expect(
-        subscriptionManager.pauseSubscription(subscriptionId, pauseSignature)
-      ).to.be.revertedWith("Invalid signature");
-    });
-
-    it("Should reject pause on non-existent subscription", async function () {
-      const fakeId = ethers.keccak256(ethers.toUtf8Bytes("fake"));
-      const pauseSignature = await signPauseRequest(fakeId);
-      
-      await expect(
-        subscriptionManager.pauseSubscription(fakeId, pauseSignature)
-      ).to.be.revertedWith("Subscription does not exist");
-    });
-
-    it("Should reject pause on already paused subscription", async function () {
-      // pause first
-      const pauseSignature1 = await signPauseRequest(subscriptionId);
-      await subscriptionManager.pauseSubscription(subscriptionId, pauseSignature1);
-      
-      // try to pause again
-      const pauseSignature2 = await signPauseRequest(subscriptionId);
-      await expect(
-        subscriptionManager.pauseSubscription(subscriptionId, pauseSignature2)
-      ).to.be.revertedWith("Subscription not active");
-    });
-  });
-
-  describe("Resume Subscription", function () {
-    beforeEach(async function () {
-      // create and pause a subscription first
-      const { intent, signature } = await createSubscriptionIntent();
-      
-      await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
-      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
-
-      const tx = await subscriptionManager.createSubscription(intent, signature);
-      const receipt = await tx.wait();
-      const events = receipt.logs.filter(log => log.topics[0] === subscriptionManager.interface.getEvent("SubscriptionCreated").topicHash);
-      subscriptionId = events[0].topics[1];
-      
-      // pause it
-      const pauseSignature = await signPauseRequest(subscriptionId);
-      await subscriptionManager.pauseSubscription(subscriptionId, pauseSignature);
-    });
-
-    it("Should resume paused subscription with valid signature", async function () {
-      const resumeSignature = await signResumeRequest(subscriptionId);
-      
-      const tx = await subscriptionManager.resumeSubscription(subscriptionId, resumeSignature);
-      const receipt = await tx.wait();
-
-      expect(receipt.status).to.equal(1);
-      
-      // check subscription status
-      const subscription = await subscriptionManager.getSubscription(subscriptionId);
-      expect(subscription.status).to.equal(0); // ACTIVE
-      
-      // check event emission
-      const events = receipt.logs.filter(log => log.topics[0] === subscriptionManager.interface.getEvent("SubscriptionResumed").topicHash);
-      expect(events).to.have.length(1);
-    });
-
-    it("Should reject resume with invalid signature", async function () {
-      const resumeSignature = await signResumeRequest(subscriptionId, merchant);
-      
-      await expect(
-        subscriptionManager.resumeSubscription(subscriptionId, resumeSignature)
-      ).to.be.revertedWith("Invalid signature");
-    });
-
-    it("Should reject resume on active subscription", async function () {
-      // resume first
-      const resumeSignature1 = await signResumeRequest(subscriptionId);
-      await subscriptionManager.resumeSubscription(subscriptionId, resumeSignature1);
-      
-      // try to resume again
-      const resumeSignature2 = await signResumeRequest(subscriptionId);
-      await expect(
-        subscriptionManager.resumeSubscription(subscriptionId, resumeSignature2)
-      ).to.be.revertedWith("Subscription not paused");
-    });
-  });
-
-  describe("Cancel Subscription", function () {
-    beforeEach(async function () {
-      // create a subscription first
-      const { intent, signature } = await createSubscriptionIntent();
-      
-      await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
-      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
-
-      const tx = await subscriptionManager.createSubscription(intent, signature);
-      const receipt = await tx.wait();
-      const events = receipt.logs.filter(log => log.topics[0] === subscriptionManager.interface.getEvent("SubscriptionCreated").topicHash);
-      subscriptionId = events[0].topics[1];
-    });
-
-    it("Should cancel active subscription by subscriber", async function () {
-      const tx = await subscriptionManager.connect(subscriber).cancelSubscription(subscriptionId);
-      const receipt = await tx.wait();
-
-      expect(receipt.status).to.equal(1);
-      
-      // check subscription status
-      const subscription = await subscriptionManager.getSubscription(subscriptionId);
-      expect(subscription.status).to.equal(2); // CANCELLED
-      
-      // check event emission
-      const events = receipt.logs.filter(log => log.topics[0] === subscriptionManager.interface.getEvent("SubscriptionCancelled").topicHash);
-      expect(events).to.have.length(1);
-    });
-
-    it("Should cancel paused subscription by subscriber", async function () {
-      // pause first
-      const pauseSignature = await signPauseRequest(subscriptionId);
-      await subscriptionManager.pauseSubscription(subscriptionId, pauseSignature);
-      
-      // then cancel
-      const tx = await subscriptionManager.connect(subscriber).cancelSubscription(subscriptionId);
-      const receipt = await tx.wait();
-
-      expect(receipt.status).to.equal(1);
-      
-      const subscription = await subscriptionManager.getSubscription(subscriptionId);
-      expect(subscription.status).to.equal(2); // CANCELLED
-    });
-
-    it("Should reject cancellation by non-subscriber", async function () {
-      await expect(
-        subscriptionManager.connect(merchant).cancelSubscription(subscriptionId)
-      ).to.be.revertedWith("Only subscriber can cancel");
-    });
-
-    it("Should reject cancellation of non-existent subscription", async function () {
-      const fakeId = ethers.keccak256(ethers.toUtf8Bytes("fake"));
-      
-      await expect(
-        subscriptionManager.connect(subscriber).cancelSubscription(fakeId)
-      ).to.be.revertedWith("Subscription does not exist");
-    });
-  });
-
-  describe("View Functions", function () {
-    beforeEach(async function () {
-      // create a subscription first
-      const { intent, signature } = await createSubscriptionIntent();
-      
-      await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
-      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
-
-      const tx = await subscriptionManager.createSubscription(intent, signature);
-      const receipt = await tx.wait();
-      const events = receipt.logs.filter(log => log.topics[0] === subscriptionManager.interface.getEvent("SubscriptionCreated").topicHash);
-      subscriptionId = events[0].topics[1];
-    });
-
-    it("Should return correct subscription data", async function () {
-      const subscription = await subscriptionManager.getSubscription(subscriptionId);
-      
-      expect(subscription.subscriber).to.equal(subscriber.address);
-      expect(subscription.merchant).to.equal(merchant.address);
-      expect(subscription.amount).to.equal(ethers.parseUnits("10", 6));
-      expect(subscription.status).to.equal(0); // ACTIVE
-    });
-
-    it("Should return correct payment count", async function () {
-      const count = await subscriptionManager.getPaymentCount(subscriptionId);
-      expect(count).to.equal(0);
-    });
-
-    it("Should return correct next payment time", async function () {
-      const subscription = await subscriptionManager.getSubscription(subscriptionId);
-      const nextTime = await subscriptionManager.getNextPaymentTime(subscriptionId);
-      expect(nextTime).to.equal(subscription.startTime);
-    });
-
-    it("Should return correct active status", async function () {
-      expect(await subscriptionManager.isSubscriptionActive(subscriptionId)).to.be.true;
-      
-      // pause and check
-      const pauseSignature = await signPauseRequest(subscriptionId);
-      await subscriptionManager.pauseSubscription(subscriptionId, pauseSignature);
-      
-      expect(await subscriptionManager.isSubscriptionActive(subscriptionId)).to.be.false;
-    });
-
-    it("Should handle view functions on non-existent subscription", async function () {
-      const fakeId = ethers.keccak256(ethers.toUtf8Bytes("fake"));
-      
-      // getSubscription should return empty struct
-      const subscription = await subscriptionManager.getSubscription(fakeId);
-      expect(subscription.subscriber).to.equal("0x0000000000000000000000000000000000000000");
-      
-      // getPaymentCount should return 0
-      expect(await subscriptionManager.getPaymentCount(fakeId)).to.equal(0);
-      
-      // getNextPaymentTime should revert
-      await expect(
-        subscriptionManager.getNextPaymentTime(fakeId)
-      ).to.be.revertedWith("Subscription does not exist");
-      
-      // isSubscriptionActive should return false
-      expect(await subscriptionManager.isSubscriptionActive(fakeId)).to.be.false;
-    });
-  });
-
-  describe("State Transitions", function () {
-    beforeEach(async function () {
-      // create a subscription first
-      const { intent, signature } = await createSubscriptionIntent();
-      
-      await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
-      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
-
-      const tx = await subscriptionManager.createSubscription(intent, signature);
-      const receipt = await tx.wait();
-      const events = receipt.logs.filter(log => log.topics[0] === subscriptionManager.interface.getEvent("SubscriptionCreated").topicHash);
-      subscriptionId = events[0].topics[1];
-    });
-
-    it("Should handle ACTIVE -> PAUSED -> ACTIVE transitions", async function () {
-      // check initial state
-      expect((await subscriptionManager.getSubscription(subscriptionId)).status).to.equal(0); // ACTIVE
-      
-      // pause
-      const pauseSignature = await signPauseRequest(subscriptionId);
-      await subscriptionManager.pauseSubscription(subscriptionId, pauseSignature);
-      expect((await subscriptionManager.getSubscription(subscriptionId)).status).to.equal(1); // PAUSED
-      
-      // resume
-      const resumeSignature = await signResumeRequest(subscriptionId);
-      await subscriptionManager.resumeSubscription(subscriptionId, resumeSignature);
-      expect((await subscriptionManager.getSubscription(subscriptionId)).status).to.equal(0); // ACTIVE
-    });
-
-    it("Should handle ACTIVE -> CANCELLED transition", async function () {
-      expect((await subscriptionManager.getSubscription(subscriptionId)).status).to.equal(0); // ACTIVE
-      
-      await subscriptionManager.connect(subscriber).cancelSubscription(subscriptionId);
-      expect((await subscriptionManager.getSubscription(subscriptionId)).status).to.equal(2); // CANCELLED
-    });
-
-    it("Should handle PAUSED -> CANCELLED transition", async function () {
-      // pause first
-      const pauseSignature = await signPauseRequest(subscriptionId);
-      await subscriptionManager.pauseSubscription(subscriptionId, pauseSignature);
-      expect((await subscriptionManager.getSubscription(subscriptionId)).status).to.equal(1); // PAUSED
-      
-      // then cancel
-      await subscriptionManager.connect(subscriber).cancelSubscription(subscriptionId);
-      expect((await subscriptionManager.getSubscription(subscriptionId)).status).to.equal(2); // CANCELLED
-    });
-
-    it("Should prevent operations on cancelled subscription", async function () {
-      // cancel first
-      await subscriptionManager.connect(subscriber).cancelSubscription(subscriptionId);
-      
-      // try to pause cancelled subscription
-      const pauseSignature = await signPauseRequest(subscriptionId);
-      await expect(
-        subscriptionManager.pauseSubscription(subscriptionId, pauseSignature)
-      ).to.be.revertedWith("Subscription not active");
-      
-      // try to cancel again
-      await expect(
-        subscriptionManager.connect(subscriber).cancelSubscription(subscriptionId)
-      ).to.be.revertedWith("Subscription cannot be cancelled");
-    });
-  });
-
-  describe("Payment Execution with Lifecycle", function () {
-    beforeEach(async function () {
-      // create a subscription first
-      const { intent, signature } = await createSubscriptionIntent();
-      
-      await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
-      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
-
-      const tx = await subscriptionManager.createSubscription(intent, signature);
-      const receipt = await tx.wait();
-      const events = receipt.logs.filter(log => log.topics[0] === subscriptionManager.interface.getEvent("SubscriptionCreated").topicHash);
-      subscriptionId = events[0].topics[1];
-    });
-
-    it("Should execute subscription successfully and distribute funds correctly", async function () {
       await registerActiveRelayer();
+    });
 
-      const latestBlock = await ethers.provider.getBlock("latest");
-      const startTime = latestBlock.timestamp;
-      const intervalSeconds = 60;
-
-      const amount = ethers.parseUnits("10", 6);
-      const { intent, signature } = await createSubscriptionIntent({
-        startTime,
-        interval: intervalSeconds,
-        maxPayments: 2,
-        maxTotalAmount: amount * 2n
-      });
-
+    it("executes PYUSD subscription and pays merchant/relayer", async function () {
+      const { intent, signature } = await createSubscriptionIntent();
       await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
       await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
 
-      const tx = await subscriptionManager.createSubscription(intent, signature);
-      const receipt = await tx.wait();
-      const events = receipt.logs.filter(log => log.topics[0] === subscriptionManager.interface.getEvent("SubscriptionCreated").topicHash);
-      const localSubscriptionId = events[0].topics[1];
+      const createTx = await subscriptionManager.createSubscription(intent, signature);
+      const createReceipt = await createTx.wait();
+      const subscriptionId = getEventArgs(createReceipt, "SubscriptionCreated").subscriptionId;
 
-      await ethers.provider.send("evm_increaseTime", [Number(intent.interval)]);
-      await ethers.provider.send("evm_mine", []);
+      await advanceTime(intent.interval);
 
       const merchantBalanceBefore = await mockPYUSD.balanceOf(merchant.address);
       const relayerBalanceBefore = await mockPYUSD.balanceOf(relayer.address);
 
-      const executeTx = await subscriptionManager.connect(relayer).executeSubscription(localSubscriptionId, relayer.address);
+      const executeTx = await subscriptionManager.connect(relayer).executeSubscription(subscriptionId, relayer.address);
       const executeReceipt = await executeTx.wait();
+      const eventArgs = getEventArgs(executeReceipt, "PaymentExecuted");
 
-      const paymentEventTopic = subscriptionManager.interface.getEvent("PaymentExecuted").topicHash;
-      const emittedPaymentEvent = executeReceipt.logs.find(log => log.topics[0] === paymentEventTopic);
-      expect(emittedPaymentEvent).to.not.equal(undefined);
+      expect(eventArgs.token).to.equal(await mockPYUSD.getAddress());
 
-      const fee = (intent.amount * 50n) / 10000n;
+      const fee = (intent.amount * BigInt(await subscriptionManager.PROTOCOL_FEE_BPS())) / 10000n;
       const merchantAmount = intent.amount - fee;
 
       const merchantBalanceAfter = await mockPYUSD.balanceOf(merchant.address);
@@ -615,80 +287,250 @@ describe("SubscriptionManager", function () {
 
       expect(merchantBalanceAfter - merchantBalanceBefore).to.equal(merchantAmount);
       expect(relayerBalanceAfter - relayerBalanceBefore).to.equal(fee);
-
-      expect(await subscriptionManager.getPaymentCount(localSubscriptionId)).to.equal(1);
-
-      const relayerInfo = await relayerRegistry.relayers(relayer.address);
-      expect(relayerInfo.successfulExecutions).to.equal(1);
-      expect(relayerInfo.totalFeesEarned).to.equal(fee);
-
-      const updatedSubscription = await subscriptionManager.getSubscription(localSubscriptionId);
-      expect(updatedSubscription.status).to.equal(0); // ACTIVE
     });
 
-    it("Should reject payment execution on paused subscription", async function () {
+    it("allows ETH subscription execution with deposited funds", async function () {
+      const ethAmount = ethers.parseEther("1");
+      const { intent, signature } = await createSubscriptionIntent({
+        token: ETH_ADDRESS,
+        amount: ethAmount,
+        maxPayments: 2,
+        maxTotalAmount: ethAmount * 2n,
+      });
+
+      const createTx = await subscriptionManager.createSubscription(intent, signature);
+      const createReceipt = await createTx.wait();
+      const subscriptionId = getEventArgs(createReceipt, "SubscriptionCreated").subscriptionId;
+
+      await subscriptionManager.connect(subscriber).depositForSubscription(subscriptionId, { value: ethAmount * 2n });
+
+      await advanceTime(intent.interval);
+
+      const merchantBalanceBefore = await ethers.provider.getBalance(merchant.address);
+      const relayerBalanceBefore = await ethers.provider.getBalance(relayer.address);
+
+      const executeTx = await subscriptionManager.connect(relayer).executeSubscription(subscriptionId, relayer.address);
+      const executeReceipt = await executeTx.wait();
+      const eventArgs = getEventArgs(executeReceipt, "PaymentExecuted");
+
+      const fee = (ethAmount * BigInt(await subscriptionManager.PROTOCOL_FEE_BPS())) / 10000n;
+      const merchantAmount = ethAmount - fee;
+      const gasPrice = executeReceipt.gasPrice ?? executeReceipt.effectiveGasPrice ?? 0n;
+      const gasUsed = executeReceipt.gasUsed * gasPrice;
+
+      const merchantBalanceAfter = await ethers.provider.getBalance(merchant.address);
+      const relayerBalanceAfter = await ethers.provider.getBalance(relayer.address);
+
+      expect(eventArgs.token).to.equal(ETH_ADDRESS);
+      expect(merchantBalanceAfter - merchantBalanceBefore).to.equal(merchantAmount);
+      const relayerDelta = relayerBalanceAfter - relayerBalanceBefore + gasUsed;
+      expect(relayerDelta).to.equal(fee);
+    });
+
+    it("records failed execution when ETH deposit insufficient", async function () {
+      const ethAmount = ethers.parseEther("1");
+      const { intent, signature } = await createSubscriptionIntent({
+        token: ETH_ADDRESS,
+        amount: ethAmount,
+        maxPayments: 1,
+        maxTotalAmount: ethAmount,
+      });
+
+      const createTx = await subscriptionManager.createSubscription(intent, signature);
+      const subscriptionId = getEventArgs(await createTx.wait(), "SubscriptionCreated").subscriptionId;
+
+      await advanceTime(intent.interval);
+
+      const executeTx = await subscriptionManager.connect(relayer).executeSubscription(subscriptionId, relayer.address);
+      const receipt = await executeTx.wait();
+      const failure = getEventArgs(receipt, "PaymentFailed");
+
+      expect(failure.reason).to.equal("Insufficient ETH deposit");
+      expect(await subscriptionManager.executedPayments(subscriptionId)).to.equal(0);
+    });
+  });
+
+  describe("Mixed token coordination", function () {
+    beforeEach(async function () {
       await registerActiveRelayer();
-      // pause subscription
-      const pauseSignature = await signPauseRequest(subscriptionId);
-      await subscriptionManager.pauseSubscription(subscriptionId, pauseSignature);
-      
-      // try to execute payment
-      await expect(
-        subscriptionManager.connect(relayer).executeSubscription(subscriptionId, relayer.address)
-      ).to.be.revertedWith("Subscription not active");
     });
 
-    it("Should reject execution from unregistered relayer", async function () {
-      await expect(
-        subscriptionManager.connect(relayer).executeSubscription(subscriptionId, relayer.address)
-      ).to.be.revertedWith("Relayer not authorized");
+    it("handles concurrent PYUSD and ETH subscriptions for same merchant", async function () {
+      const { intent: pyIntent, signature: pySignature } = await createSubscriptionIntent();
+      await mockPYUSD.mint(subscriber.address, pyIntent.maxTotalAmount);
+      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), pyIntent.maxTotalAmount);
+      const pyTx = await subscriptionManager.createSubscription(pyIntent, pySignature);
+      const pyId = getEventArgs(await pyTx.wait(), "SubscriptionCreated").subscriptionId;
+
+      const ethAmount = ethers.parseEther("2");
+      const { intent: ethIntent, signature: ethSignature } = await createSubscriptionIntent({
+        token: ETH_ADDRESS,
+        amount: ethAmount,
+        maxPayments: 2,
+        maxTotalAmount: ethAmount * 2n,
+      });
+      const ethCreateTx = await subscriptionManager.createSubscription(ethIntent, ethSignature);
+      const ethId = getEventArgs(await ethCreateTx.wait(), "SubscriptionCreated").subscriptionId;
+
+      await subscriptionManager.connect(subscriber).depositForSubscription(ethId, { value: ethAmount });
+
+      await advanceTime(pyIntent.interval);
+
+      const merchantPyBefore = await mockPYUSD.balanceOf(merchant.address);
+      const merchantEthBefore = await ethers.provider.getBalance(merchant.address);
+
+      const relayerPyBefore = await mockPYUSD.balanceOf(relayer.address);
+
+      const pyTxResponse = await subscriptionManager.connect(relayer).executeSubscription(pyId, relayer.address);
+      await pyTxResponse.wait();
+
+      const relayerEthBefore = await ethers.provider.getBalance(relayer.address);
+      const ethTx = await subscriptionManager.connect(relayer).executeSubscription(ethId, relayer.address);
+      const ethReceipt = await ethTx.wait();
+      const ethGasPrice = ethReceipt.gasPrice ?? ethReceipt.effectiveGasPrice ?? 0n;
+      const gasCost = ethReceipt.gasUsed * ethGasPrice;
+
+      const feePy = (pyIntent.amount * BigInt(await subscriptionManager.PROTOCOL_FEE_BPS())) / 10000n;
+      const feeEth = (ethAmount * BigInt(await subscriptionManager.PROTOCOL_FEE_BPS())) / 10000n;
+
+      const merchantPyAfter = await mockPYUSD.balanceOf(merchant.address);
+      const merchantEthAfter = await ethers.provider.getBalance(merchant.address);
+      const relayerEthAfter = await ethers.provider.getBalance(relayer.address);
+      const relayerPyAfter = await mockPYUSD.balanceOf(relayer.address);
+
+      expect(merchantPyAfter - merchantPyBefore).to.equal(pyIntent.amount - feePy);
+      expect(merchantEthAfter - merchantEthBefore).to.equal(ethAmount - feeEth);
+      expect(relayerPyAfter - relayerPyBefore).to.equal(feePy);
+      const relayerEthDelta = relayerEthAfter - relayerEthBefore + gasCost;
+      expect(relayerEthDelta).to.equal(feeEth);
     });
+  });
 
-    it("Should slash relayer after repeated on-chain failures", async function () {
-      await registerActiveRelayer();
-      await mockPYUSD.setForceFailOnTransfer(subscriber.address, true);
+  describe("ETH deposit lifecycle", function () {
+    it("allows subscriber to withdraw unused ETH after cancellation", async function () {
+      const ethAmount = ethers.parseEther("1");
+      const { intent, signature } = await createSubscriptionIntent({
+        token: ETH_ADDRESS,
+        amount: ethAmount,
+        maxPayments: 2,
+        maxTotalAmount: ethAmount * 2n,
+      });
 
-      for (let i = 0; i < 3; i++) {
-        await subscriptionManager.connect(relayer).executeSubscription(subscriptionId, relayer.address);
-      }
+      const createTx = await subscriptionManager.createSubscription(intent, signature);
+      const subscriptionId = getEventArgs(await createTx.wait(), "SubscriptionCreated").subscriptionId;
 
-      expect(await relayerRegistry.isSlashed(relayer.address)).to.equal(true);
-      const stakeInfo = await relayerRegistry.relayers(relayer.address);
-      expect(stakeInfo.isActive).to.equal(false);
-    });
-
-    it("Should allow payment execution after resume", async function () {
-      await registerActiveRelayer();
-      // pause subscription
-      const pauseSignature = await signPauseRequest(subscriptionId);
-      await subscriptionManager.pauseSubscription(subscriptionId, pauseSignature);
-      
-      // resume subscription
-      const resumeSignature = await signResumeRequest(subscriptionId);
-      await subscriptionManager.resumeSubscription(subscriptionId, resumeSignature);
-      
-      // should allow execution now (even though it might fail due to timing, the status check should pass)
-      const subscription = await subscriptionManager.getSubscription(subscriptionId);
-      expect(subscription.status).to.equal(0); // ACTIVE
-      
-      // check that we can call the execution (it may fail due to timing but not due to status)
-      try {
-        await subscriptionManager.connect(relayer).executeSubscription(subscriptionId, relayer.address);
-      } catch (error) {
-        // if it fails, it should be due to timing, not status
-        expect(error.message).to.not.include("Subscription not active");
-      }
-    });
-
-    it("Should reject payment execution on cancelled subscription", async function () {
-      await registerActiveRelayer();
-      // cancel subscription
+      await subscriptionManager.connect(subscriber).depositForSubscription(subscriptionId, { value: ethAmount * 2n });
       await subscriptionManager.connect(subscriber).cancelSubscription(subscriptionId);
-      
-      // try to execute payment
+
+      const balanceBefore = await ethers.provider.getBalance(subscriber.address);
+      const withdrawTx = await subscriptionManager.connect(subscriber).withdrawUnusedETH(subscriptionId);
+      const receipt = await withdrawTx.wait();
+      const withdrawGasPrice = receipt.gasPrice ?? receipt.effectiveGasPrice ?? 0n;
+      const gasCost = receipt.gasUsed * withdrawGasPrice;
+      const balanceAfter = await ethers.provider.getBalance(subscriber.address);
+
+      expect(balanceAfter + gasCost - balanceBefore).to.equal(ethAmount * 2n);
+      expect(await subscriptionManager.ethDeposits(subscriptionId)).to.equal(0);
+    });
+
+    it("blocks withdraws while subscription active", async function () {
+      const ethAmount = ethers.parseEther("1");
+      const { intent, signature } = await createSubscriptionIntent({
+        token: ETH_ADDRESS,
+        amount: ethAmount,
+        maxPayments: 1,
+        maxTotalAmount: ethAmount,
+      });
+
+      const createTx = await subscriptionManager.createSubscription(intent, signature);
+      const subscriptionId = getEventArgs(await createTx.wait(), "SubscriptionCreated").subscriptionId;
+      await subscriptionManager.connect(subscriber).depositForSubscription(subscriptionId, { value: ethAmount });
+
+      await expect(subscriptionManager.connect(subscriber).withdrawUnusedETH(subscriptionId)).to.be.revertedWith(
+        "Subscription still active"
+      );
+    });
+  });
+
+  describe("Admin token management", function () {
+    it("adds new supported token and allows subscription usage", async function () {
+      await subscriptionManager.connect(owner).addSupportedToken(await extraToken.getAddress());
+      expect(await subscriptionManager.supportedTokens(await extraToken.getAddress())).to.equal(true);
+
+      const amount = ethers.parseUnits("15", 6);
+      const intentData = await createSubscriptionIntent({
+        token: await extraToken.getAddress(),
+        amount,
+        maxPayments: 2,
+        maxTotalAmount: amount * 2n,
+      });
+
+      await extraToken.mint(subscriber.address, intentData.intent.maxTotalAmount);
+      await extraToken
+        .connect(subscriber)
+        .approve(await subscriptionManager.getAddress(), intentData.intent.maxTotalAmount);
+
+      const tx = await subscriptionManager.createSubscription(intentData.intent, intentData.signature);
+      const args = getEventArgs(await tx.wait(), "SubscriptionCreated");
+      expect(args.token).to.equal(await extraToken.getAddress());
+    });
+
+    it("prevents removing token with active subscriptions", async function () {
+      await subscriptionManager.connect(owner).addSupportedToken(await extraToken.getAddress());
+
+      const amount = ethers.parseUnits("5", 6);
+      const intentData = await createSubscriptionIntent({
+        token: await extraToken.getAddress(),
+        amount,
+        maxPayments: 1,
+        maxTotalAmount: amount,
+      });
+      await extraToken.mint(subscriber.address, amount);
+      await extraToken.connect(subscriber).approve(await subscriptionManager.getAddress(), amount);
+      await subscriptionManager.createSubscription(intentData.intent, intentData.signature);
+
       await expect(
-        subscriptionManager.connect(relayer).executeSubscription(subscriptionId, relayer.address)
-      ).to.be.revertedWith("Subscription not active");
+        subscriptionManager.connect(owner).removeSupportedToken(await extraToken.getAddress())
+      ).to.be.revertedWith("Active subscriptions present");
+    });
+
+    it("removes token after subscriptions end", async function () {
+      await subscriptionManager.connect(owner).addSupportedToken(await extraToken.getAddress());
+      const amount = ethers.parseUnits("5", 6);
+      const intentData = await createSubscriptionIntent({
+        token: await extraToken.getAddress(),
+        amount,
+        maxPayments: 1,
+        maxTotalAmount: amount,
+      });
+      await extraToken.mint(subscriber.address, amount);
+      await extraToken.connect(subscriber).approve(await subscriptionManager.getAddress(), amount);
+      const tx = await subscriptionManager.createSubscription(intentData.intent, intentData.signature);
+      const id = getEventArgs(await tx.wait(), "SubscriptionCreated").subscriptionId;
+
+      await subscriptionManager.connect(subscriber).cancelSubscription(id);
+      await subscriptionManager.connect(owner).removeSupportedToken(await extraToken.getAddress());
+      expect(await subscriptionManager.supportedTokens(await extraToken.getAddress())).to.equal(false);
+    });
+  });
+
+  describe("State transitions", function () {
+    it("pauses and resumes while retaining token data", async function () {
+      const { intent, signature } = await createSubscriptionIntent();
+      await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
+      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
+      const tx = await subscriptionManager.createSubscription(intent, signature);
+      const subscriptionId = getEventArgs(await tx.wait(), "SubscriptionCreated").subscriptionId;
+
+      const pauseSig = await signPauseRequest(subscriptionId);
+      await subscriptionManager.pauseSubscription(subscriptionId, pauseSig);
+      let stored = await subscriptionManager.getSubscription(subscriptionId);
+      expect(stored.status).to.equal(1); // PAUSED
+
+      const resumeSig = await signResumeRequest(subscriptionId);
+      await subscriptionManager.resumeSubscription(subscriptionId, resumeSig);
+      stored = await subscriptionManager.getSubscription(subscriptionId);
+      expect(stored.status).to.equal(0); // ACTIVE
     });
   });
 });

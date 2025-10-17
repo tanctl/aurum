@@ -47,6 +47,8 @@ pub struct SubscriptionIntent {
     pub expiry: u64,
     #[serde(deserialize_with = "deserialize_positive_number")]
     pub nonce: u64,
+    #[serde(deserialize_with = "deserialize_address")]
+    pub token: String,
 }
 
 // response types
@@ -76,6 +78,7 @@ pub struct SubscriptionResponse {
     pub max_total_amount: String,
     pub expiry: u64,
     pub nonce: u64,
+    pub token: String,
     pub status: String,
     #[serde(rename = "executedPayments")]
     pub executed_payments: u64,
@@ -120,6 +123,7 @@ pub struct TransactionData {
     pub block_number: u64,
     pub timestamp: u64,
     pub chain: String,
+    pub token: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -345,6 +349,7 @@ impl SubscriptionIntent {
         input.extend_from_slice(self.max_total_amount.as_bytes());
         input.extend_from_slice(&self.expiry.to_be_bytes());
         input.extend_from_slice(&self.nonce.to_be_bytes());
+        input.extend_from_slice(self.token.as_bytes());
         input
     }
 

@@ -34,6 +34,7 @@ export declare namespace SubscriptionManager {
     maxTotalAmount: BigNumberish;
     expiry: BigNumberish;
     nonce: BigNumberish;
+    token: AddressLike;
   };
 
   export type SubscriptionIntentStructOutput = [
@@ -45,7 +46,8 @@ export declare namespace SubscriptionManager {
     maxPayments: bigint,
     maxTotalAmount: bigint,
     expiry: bigint,
-    nonce: bigint
+    nonce: bigint,
+    token: string
   ] & {
     subscriber: string;
     merchant: string;
@@ -56,6 +58,7 @@ export declare namespace SubscriptionManager {
     maxTotalAmount: bigint;
     expiry: bigint;
     nonce: bigint;
+    token: string;
   };
 
   export type SubscriptionStruct = {
@@ -68,6 +71,7 @@ export declare namespace SubscriptionManager {
     maxTotalAmount: BigNumberish;
     expiry: BigNumberish;
     nonce: BigNumberish;
+    token: AddressLike;
     status: BigNumberish;
   };
 
@@ -81,6 +85,7 @@ export declare namespace SubscriptionManager {
     maxTotalAmount: bigint,
     expiry: bigint,
     nonce: bigint,
+    token: string,
     status: bigint
   ] & {
     subscriber: string;
@@ -92,6 +97,7 @@ export declare namespace SubscriptionManager {
     maxTotalAmount: bigint;
     expiry: bigint;
     nonce: bigint;
+    token: string;
     status: bigint;
   };
 }
@@ -101,34 +107,49 @@ export interface SubscriptionManagerInterface extends Interface {
     nameOrSignature:
       | "PAUSE_REQUEST_TYPEHASH"
       | "PROTOCOL_FEE_BPS"
-      | "PYUSD_ADDRESS"
       | "RELAYER_REGISTRY"
       | "RESUME_REQUEST_TYPEHASH"
       | "SUBSCRIPTION_INTENT_TYPEHASH"
+      | "activeSubscriptionCounts"
+      | "addSupportedToken"
       | "cancelSubscription"
       | "createSubscription"
       | "currentNonce"
+      | "depositForSubscription"
+      | "ethDeposits"
       | "executeSubscription"
       | "executedPayments"
       | "getNextNonce"
       | "getNextPaymentTime"
       | "getPaymentCount"
       | "getSubscription"
+      | "getSubscriptionToken"
+      | "getSupportedTokens"
       | "isSubscriptionActive"
+      | "owner"
       | "pauseSubscription"
+      | "removeSupportedToken"
+      | "renounceOwnership"
       | "resumeSubscription"
+      | "subscriptionToken"
       | "subscriptions"
+      | "supportedTokens"
+      | "transferOwnership"
       | "verifyIntent"
+      | "withdrawUnusedETH"
   ): FunctionFragment;
 
   getEvent(
     nameOrSignatureOrTopic:
+      | "OwnershipTransferred"
       | "PaymentExecuted"
       | "PaymentFailed"
       | "SubscriptionCancelled"
       | "SubscriptionCreated"
       | "SubscriptionPaused"
       | "SubscriptionResumed"
+      | "TokenAdded"
+      | "TokenRemoved"
   ): EventFragment;
 
   encodeFunctionData(
@@ -137,10 +158,6 @@ export interface SubscriptionManagerInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "PROTOCOL_FEE_BPS",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "PYUSD_ADDRESS",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -156,6 +173,14 @@ export interface SubscriptionManagerInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "activeSubscriptionCounts",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "addSupportedToken",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "cancelSubscription",
     values: [BytesLike]
   ): string;
@@ -166,6 +191,14 @@ export interface SubscriptionManagerInterface extends Interface {
   encodeFunctionData(
     functionFragment: "currentNonce",
     values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "depositForSubscription",
+    values: [BytesLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "ethDeposits",
+    values: [BytesLike]
   ): string;
   encodeFunctionData(
     functionFragment: "executeSubscription",
@@ -192,24 +225,57 @@ export interface SubscriptionManagerInterface extends Interface {
     values: [BytesLike]
   ): string;
   encodeFunctionData(
-    functionFragment: "isSubscriptionActive",
+    functionFragment: "getSubscriptionToken",
     values: [BytesLike]
   ): string;
   encodeFunctionData(
+    functionFragment: "getSupportedTokens",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "isSubscriptionActive",
+    values: [BytesLike]
+  ): string;
+  encodeFunctionData(functionFragment: "owner", values?: undefined): string;
+  encodeFunctionData(
     functionFragment: "pauseSubscription",
     values: [BytesLike, BytesLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "removeSupportedToken",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "renounceOwnership",
+    values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "resumeSubscription",
     values: [BytesLike, BytesLike]
   ): string;
   encodeFunctionData(
+    functionFragment: "subscriptionToken",
+    values: [BytesLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "subscriptions",
     values: [BytesLike]
   ): string;
   encodeFunctionData(
+    functionFragment: "supportedTokens",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "transferOwnership",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "verifyIntent",
     values: [SubscriptionManager.SubscriptionIntentStruct, BytesLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "withdrawUnusedETH",
+    values: [BytesLike]
   ): string;
 
   decodeFunctionResult(
@@ -218,10 +284,6 @@ export interface SubscriptionManagerInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "PROTOCOL_FEE_BPS",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "PYUSD_ADDRESS",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -237,6 +299,14 @@ export interface SubscriptionManagerInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "activeSubscriptionCounts",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "addSupportedToken",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "cancelSubscription",
     data: BytesLike
   ): Result;
@@ -246,6 +316,14 @@ export interface SubscriptionManagerInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "currentNonce",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "depositForSubscription",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "ethDeposits",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -273,11 +351,28 @@ export interface SubscriptionManagerInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "isSubscriptionActive",
+    functionFragment: "getSubscriptionToken",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "getSupportedTokens",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "isSubscriptionActive",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
+  decodeFunctionResult(
     functionFragment: "pauseSubscription",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "removeSupportedToken",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "renounceOwnership",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -285,13 +380,42 @@ export interface SubscriptionManagerInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "subscriptionToken",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "subscriptions",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "supportedTokens",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "transferOwnership",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
     functionFragment: "verifyIntent",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "withdrawUnusedETH",
+    data: BytesLike
+  ): Result;
+}
+
+export namespace OwnershipTransferredEvent {
+  export type InputTuple = [previousOwner: AddressLike, newOwner: AddressLike];
+  export type OutputTuple = [previousOwner: string, newOwner: string];
+  export interface OutputObject {
+    previousOwner: string;
+    newOwner: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
 }
 
 export namespace PaymentExecutedEvent {
@@ -299,6 +423,7 @@ export namespace PaymentExecutedEvent {
     subscriptionId: BytesLike,
     subscriber: AddressLike,
     merchant: AddressLike,
+    token: AddressLike,
     paymentNumber: BigNumberish,
     amount: BigNumberish,
     fee: BigNumberish,
@@ -308,6 +433,7 @@ export namespace PaymentExecutedEvent {
     subscriptionId: string,
     subscriber: string,
     merchant: string,
+    token: string,
     paymentNumber: bigint,
     amount: bigint,
     fee: bigint,
@@ -317,6 +443,7 @@ export namespace PaymentExecutedEvent {
     subscriptionId: string;
     subscriber: string;
     merchant: string;
+    token: string;
     paymentNumber: bigint;
     amount: bigint;
     fee: bigint;
@@ -383,6 +510,7 @@ export namespace SubscriptionCreatedEvent {
     subscriptionId: BytesLike,
     subscriber: AddressLike,
     merchant: AddressLike,
+    token: AddressLike,
     amount: BigNumberish,
     interval: BigNumberish,
     maxPayments: BigNumberish,
@@ -393,6 +521,7 @@ export namespace SubscriptionCreatedEvent {
     subscriptionId: string,
     subscriber: string,
     merchant: string,
+    token: string,
     amount: bigint,
     interval: bigint,
     maxPayments: bigint,
@@ -403,6 +532,7 @@ export namespace SubscriptionCreatedEvent {
     subscriptionId: string;
     subscriber: string;
     merchant: string;
+    token: string;
     amount: bigint;
     interval: bigint;
     maxPayments: bigint;
@@ -434,6 +564,30 @@ export namespace SubscriptionResumedEvent {
   export interface OutputObject {
     subscriptionId: string;
     subscriber: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace TokenAddedEvent {
+  export type InputTuple = [token: AddressLike];
+  export type OutputTuple = [token: string];
+  export interface OutputObject {
+    token: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace TokenRemovedEvent {
+  export type InputTuple = [token: AddressLike];
+  export type OutputTuple = [token: string];
+  export interface OutputObject {
+    token: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -488,13 +642,23 @@ export interface SubscriptionManager extends BaseContract {
 
   PROTOCOL_FEE_BPS: TypedContractMethod<[], [bigint], "view">;
 
-  PYUSD_ADDRESS: TypedContractMethod<[], [string], "view">;
-
   RELAYER_REGISTRY: TypedContractMethod<[], [string], "view">;
 
   RESUME_REQUEST_TYPEHASH: TypedContractMethod<[], [string], "view">;
 
   SUBSCRIPTION_INTENT_TYPEHASH: TypedContractMethod<[], [string], "view">;
+
+  activeSubscriptionCounts: TypedContractMethod<
+    [arg0: AddressLike],
+    [bigint],
+    "view"
+  >;
+
+  addSupportedToken: TypedContractMethod<
+    [token: AddressLike],
+    [void],
+    "nonpayable"
+  >;
 
   cancelSubscription: TypedContractMethod<
     [subscriptionId: BytesLike],
@@ -512,6 +676,14 @@ export interface SubscriptionManager extends BaseContract {
   >;
 
   currentNonce: TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+
+  depositForSubscription: TypedContractMethod<
+    [subscriptionId: BytesLike],
+    [void],
+    "payable"
+  >;
+
+  ethDeposits: TypedContractMethod<[arg0: BytesLike], [bigint], "view">;
 
   executeSubscription: TypedContractMethod<
     [subscriptionId: BytesLike, relayer: AddressLike],
@@ -545,11 +717,21 @@ export interface SubscriptionManager extends BaseContract {
     "view"
   >;
 
+  getSubscriptionToken: TypedContractMethod<
+    [subscriptionId: BytesLike],
+    [string],
+    "view"
+  >;
+
+  getSupportedTokens: TypedContractMethod<[], [string[]], "view">;
+
   isSubscriptionActive: TypedContractMethod<
     [subscriptionId: BytesLike],
     [boolean],
     "view"
   >;
+
+  owner: TypedContractMethod<[], [string], "view">;
 
   pauseSubscription: TypedContractMethod<
     [subscriptionId: BytesLike, signature: BytesLike],
@@ -557,11 +739,21 @@ export interface SubscriptionManager extends BaseContract {
     "nonpayable"
   >;
 
+  removeSupportedToken: TypedContractMethod<
+    [token: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
+  renounceOwnership: TypedContractMethod<[], [void], "nonpayable">;
+
   resumeSubscription: TypedContractMethod<
     [subscriptionId: BytesLike, signature: BytesLike],
     [void],
     "nonpayable"
   >;
+
+  subscriptionToken: TypedContractMethod<[arg0: BytesLike], [string], "view">;
 
   subscriptions: TypedContractMethod<
     [arg0: BytesLike],
@@ -576,6 +768,7 @@ export interface SubscriptionManager extends BaseContract {
         bigint,
         bigint,
         bigint,
+        string,
         bigint
       ] & {
         subscriber: string;
@@ -587,10 +780,19 @@ export interface SubscriptionManager extends BaseContract {
         maxTotalAmount: bigint;
         expiry: bigint;
         nonce: bigint;
+        token: string;
         status: bigint;
       }
     ],
     "view"
+  >;
+
+  supportedTokens: TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
+
+  transferOwnership: TypedContractMethod<
+    [newOwner: AddressLike],
+    [void],
+    "nonpayable"
   >;
 
   verifyIntent: TypedContractMethod<
@@ -600,6 +802,12 @@ export interface SubscriptionManager extends BaseContract {
     ],
     [[boolean, string] & { valid: boolean; signer: string }],
     "view"
+  >;
+
+  withdrawUnusedETH: TypedContractMethod<
+    [subscriptionId: BytesLike],
+    [void],
+    "nonpayable"
   >;
 
   getFunction<T extends ContractMethod = ContractMethod>(
@@ -613,9 +821,6 @@ export interface SubscriptionManager extends BaseContract {
     nameOrSignature: "PROTOCOL_FEE_BPS"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
-    nameOrSignature: "PYUSD_ADDRESS"
-  ): TypedContractMethod<[], [string], "view">;
-  getFunction(
     nameOrSignature: "RELAYER_REGISTRY"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
@@ -624,6 +829,12 @@ export interface SubscriptionManager extends BaseContract {
   getFunction(
     nameOrSignature: "SUBSCRIPTION_INTENT_TYPEHASH"
   ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "activeSubscriptionCounts"
+  ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "addSupportedToken"
+  ): TypedContractMethod<[token: AddressLike], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "cancelSubscription"
   ): TypedContractMethod<[subscriptionId: BytesLike], [void], "nonpayable">;
@@ -640,6 +851,12 @@ export interface SubscriptionManager extends BaseContract {
   getFunction(
     nameOrSignature: "currentNonce"
   ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "depositForSubscription"
+  ): TypedContractMethod<[subscriptionId: BytesLike], [void], "payable">;
+  getFunction(
+    nameOrSignature: "ethDeposits"
+  ): TypedContractMethod<[arg0: BytesLike], [bigint], "view">;
   getFunction(
     nameOrSignature: "executeSubscription"
   ): TypedContractMethod<
@@ -667,8 +884,17 @@ export interface SubscriptionManager extends BaseContract {
     "view"
   >;
   getFunction(
+    nameOrSignature: "getSubscriptionToken"
+  ): TypedContractMethod<[subscriptionId: BytesLike], [string], "view">;
+  getFunction(
+    nameOrSignature: "getSupportedTokens"
+  ): TypedContractMethod<[], [string[]], "view">;
+  getFunction(
     nameOrSignature: "isSubscriptionActive"
   ): TypedContractMethod<[subscriptionId: BytesLike], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "owner"
+  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "pauseSubscription"
   ): TypedContractMethod<
@@ -677,12 +903,21 @@ export interface SubscriptionManager extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "removeSupportedToken"
+  ): TypedContractMethod<[token: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "renounceOwnership"
+  ): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "resumeSubscription"
   ): TypedContractMethod<
     [subscriptionId: BytesLike, signature: BytesLike],
     [void],
     "nonpayable"
   >;
+  getFunction(
+    nameOrSignature: "subscriptionToken"
+  ): TypedContractMethod<[arg0: BytesLike], [string], "view">;
   getFunction(
     nameOrSignature: "subscriptions"
   ): TypedContractMethod<
@@ -698,6 +933,7 @@ export interface SubscriptionManager extends BaseContract {
         bigint,
         bigint,
         bigint,
+        string,
         bigint
       ] & {
         subscriber: string;
@@ -709,11 +945,18 @@ export interface SubscriptionManager extends BaseContract {
         maxTotalAmount: bigint;
         expiry: bigint;
         nonce: bigint;
+        token: string;
         status: bigint;
       }
     ],
     "view"
   >;
+  getFunction(
+    nameOrSignature: "supportedTokens"
+  ): TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "transferOwnership"
+  ): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "verifyIntent"
   ): TypedContractMethod<
@@ -724,7 +967,17 @@ export interface SubscriptionManager extends BaseContract {
     [[boolean, string] & { valid: boolean; signer: string }],
     "view"
   >;
+  getFunction(
+    nameOrSignature: "withdrawUnusedETH"
+  ): TypedContractMethod<[subscriptionId: BytesLike], [void], "nonpayable">;
 
+  getEvent(
+    key: "OwnershipTransferred"
+  ): TypedContractEvent<
+    OwnershipTransferredEvent.InputTuple,
+    OwnershipTransferredEvent.OutputTuple,
+    OwnershipTransferredEvent.OutputObject
+  >;
   getEvent(
     key: "PaymentExecuted"
   ): TypedContractEvent<
@@ -767,9 +1020,34 @@ export interface SubscriptionManager extends BaseContract {
     SubscriptionResumedEvent.OutputTuple,
     SubscriptionResumedEvent.OutputObject
   >;
+  getEvent(
+    key: "TokenAdded"
+  ): TypedContractEvent<
+    TokenAddedEvent.InputTuple,
+    TokenAddedEvent.OutputTuple,
+    TokenAddedEvent.OutputObject
+  >;
+  getEvent(
+    key: "TokenRemoved"
+  ): TypedContractEvent<
+    TokenRemovedEvent.InputTuple,
+    TokenRemovedEvent.OutputTuple,
+    TokenRemovedEvent.OutputObject
+  >;
 
   filters: {
-    "PaymentExecuted(bytes32,address,address,uint256,uint256,uint256,address)": TypedContractEvent<
+    "OwnershipTransferred(address,address)": TypedContractEvent<
+      OwnershipTransferredEvent.InputTuple,
+      OwnershipTransferredEvent.OutputTuple,
+      OwnershipTransferredEvent.OutputObject
+    >;
+    OwnershipTransferred: TypedContractEvent<
+      OwnershipTransferredEvent.InputTuple,
+      OwnershipTransferredEvent.OutputTuple,
+      OwnershipTransferredEvent.OutputObject
+    >;
+
+    "PaymentExecuted(bytes32,address,address,address,uint256,uint256,uint256,address)": TypedContractEvent<
       PaymentExecutedEvent.InputTuple,
       PaymentExecutedEvent.OutputTuple,
       PaymentExecutedEvent.OutputObject
@@ -802,7 +1080,7 @@ export interface SubscriptionManager extends BaseContract {
       SubscriptionCancelledEvent.OutputObject
     >;
 
-    "SubscriptionCreated(bytes32,address,address,uint256,uint256,uint256,uint256,uint256)": TypedContractEvent<
+    "SubscriptionCreated(bytes32,address,address,address,uint256,uint256,uint256,uint256,uint256)": TypedContractEvent<
       SubscriptionCreatedEvent.InputTuple,
       SubscriptionCreatedEvent.OutputTuple,
       SubscriptionCreatedEvent.OutputObject
@@ -833,6 +1111,28 @@ export interface SubscriptionManager extends BaseContract {
       SubscriptionResumedEvent.InputTuple,
       SubscriptionResumedEvent.OutputTuple,
       SubscriptionResumedEvent.OutputObject
+    >;
+
+    "TokenAdded(address)": TypedContractEvent<
+      TokenAddedEvent.InputTuple,
+      TokenAddedEvent.OutputTuple,
+      TokenAddedEvent.OutputObject
+    >;
+    TokenAdded: TypedContractEvent<
+      TokenAddedEvent.InputTuple,
+      TokenAddedEvent.OutputTuple,
+      TokenAddedEvent.OutputObject
+    >;
+
+    "TokenRemoved(address)": TypedContractEvent<
+      TokenRemovedEvent.InputTuple,
+      TokenRemovedEvent.OutputTuple,
+      TokenRemovedEvent.OutputObject
+    >;
+    TokenRemoved: TypedContractEvent<
+      TokenRemovedEvent.InputTuple,
+      TokenRemovedEvent.OutputTuple,
+      TokenRemovedEvent.OutputObject
     >;
   };
 }

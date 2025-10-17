@@ -22,9 +22,14 @@ async function main() {
 
   // deploy SubscriptionManager with RelayerRegistry address
   const SubscriptionManager = await hre.ethers.getContractFactory("SubscriptionManager");
-  const subscriptionManager = await SubscriptionManager.deploy(await mockPYUSD.getAddress(), await relayerRegistry.getAddress());
+  const supportedTokens = [await mockPYUSD.getAddress(), hre.ethers.ZeroAddress];
+  const subscriptionManager = await SubscriptionManager.deploy(
+    supportedTokens,
+    await relayerRegistry.getAddress()
+  );
   await subscriptionManager.waitForDeployment();
   console.log("SubscriptionManager deployed to:", await subscriptionManager.getAddress());
+  console.log("Supported tokens:", supportedTokens);
 
   // set SubscriptionManager address in RelayerRegistry
   await relayerRegistry.setSubscriptionManager(await subscriptionManager.getAddress());

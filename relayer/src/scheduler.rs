@@ -9,10 +9,11 @@ use crate::integrations::hypersync::HyperSyncClient;
 use crate::metrics::Metrics;
 use crate::Config;
 use chrono::Utc;
-use ethers::types::{H256, U256};
+use ethers::types::{Address, H256, U256};
 use serde_json::to_value;
 use sqlx::{PgPool, Row};
 use std::convert::TryFrom;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio_cron_scheduler::{Job, JobScheduler};
@@ -415,6 +416,8 @@ impl Scheduler {
 
         let chain = &subscription.chain;
         let subscription_id_bytes = subscription_id_to_bytes(&subscription.id)?;
+        let token_address = Address::from_str(&subscription.token)
+            .map_err(|_| RelayerError::Validation("invalid token address".to_string()))?;
 
         // get current blockchain state with timeout
         let on_chain_subscription = match tokio::time::timeout(
@@ -442,6 +445,12 @@ impl Scheduler {
         // validate contract status (0 = ACTIVE)
         if on_chain_subscription.status != 0 {
             return Ok(ValidationResult::SubscriptionNotActive);
+        }
+
+        if on_chain_subscription.token != token_address {
+            return Ok(ValidationResult::ChainError(
+                "token mismatch between database and chain".to_string(),
+            ));
         }
 
         // check nonce consistency between database and contract
@@ -513,25 +522,28 @@ impl Scheduler {
             .parse()
             .map_err(|_| RelayerError::Validation("invalid subscriber address".to_string()))?;
 
-        // check balance with timeout
-        let balance = match tokio::time::timeout(
-            Duration::from_secs(15),
-            self.blockchain_client
-                .check_balance(subscriber_address, chain),
-        )
-        .await
-        {
-            Ok(Ok(bal)) => bal,
-            Ok(Err(e)) => {
-                return Ok(ValidationResult::ChainError(format!(
-                    "balance check failed: {}",
-                    e
-                )))
-            }
-            Err(_) => {
-                return Ok(ValidationResult::ChainError(
-                    "balance check timeout".to_string(),
-                ))
+        let balance = if token_address == Address::zero() {
+            U256::MAX
+        } else {
+            match tokio::time::timeout(
+                Duration::from_secs(15),
+                self.blockchain_client
+                    .check_balance(subscriber_address, token_address, chain),
+            )
+            .await
+            {
+                Ok(Ok(bal)) => bal,
+                Ok(Err(e)) => {
+                    return Ok(ValidationResult::ChainError(format!(
+                        "balance check failed: {}",
+                        e
+                    )))
+                }
+                Err(_) => {
+                    return Ok(ValidationResult::ChainError(
+                        "balance check timeout".to_string(),
+                    ))
+                }
             }
         };
 
@@ -546,29 +558,36 @@ impl Scheduler {
             ));
         }
 
-        if balance < payment_amount {
+        if token_address != Address::zero() && balance < payment_amount {
             return Ok(ValidationResult::InsufficientBalance);
         }
 
-        // check allowance with timeout
-        let has_allowance = match tokio::time::timeout(
-            Duration::from_secs(15),
-            self.blockchain_client
-                .check_allowance(subscriber_address, payment_amount, chain),
-        )
-        .await
-        {
-            Ok(Ok(allowance)) => allowance,
-            Ok(Err(e)) => {
-                return Ok(ValidationResult::ChainError(format!(
-                    "allowance check failed: {}",
-                    e
-                )))
-            }
-            Err(_) => {
-                return Ok(ValidationResult::ChainError(
-                    "allowance check timeout".to_string(),
-                ))
+        let has_allowance = if token_address == Address::zero() {
+            true
+        } else {
+            match tokio::time::timeout(
+                Duration::from_secs(15),
+                self.blockchain_client.check_allowance(
+                    subscriber_address,
+                    token_address,
+                    payment_amount,
+                    chain,
+                ),
+            )
+            .await
+            {
+                Ok(Ok(allowance)) => allowance,
+                Ok(Err(e)) => {
+                    return Ok(ValidationResult::ChainError(format!(
+                        "allowance check failed: {}",
+                        e
+                    )))
+                }
+                Err(_) => {
+                    return Ok(ValidationResult::ChainError(
+                        "allowance check timeout".to_string(),
+                    ))
+                }
             }
         };
 
@@ -1138,6 +1157,8 @@ async fn validate_payment_job_safe(
 
     let chain = &subscription.chain;
     let subscription_id_bytes = subscription_id_to_bytes(&subscription.id)?;
+    let token_address = Address::from_str(&subscription.token)
+        .map_err(|_| RelayerError::Validation("invalid token address".to_string()))?;
 
     // get current blockchain state with timeout
     let on_chain_subscription = match tokio::time::timeout(
@@ -1163,6 +1184,12 @@ async fn validate_payment_job_safe(
 
     if on_chain_subscription.status != 0 {
         return Ok(ValidationResult::SubscriptionNotActive);
+    }
+
+    if on_chain_subscription.token != token_address {
+        return Ok(ValidationResult::ChainError(
+            "token mismatch between database and chain".to_string(),
+        ));
     }
 
     // check if subscription has expired
@@ -1218,10 +1245,14 @@ async fn validate_payment_job_safe(
         .parse()
         .map_err(|_| RelayerError::Validation("invalid subscriber address".to_string()))?;
 
-    let balance = blockchain_client
-        .check_balance(subscriber_address, chain)
-        .await
-        .map_err(|e| RelayerError::ContractRevert(format!("failed to check balance: {}", e)))?;
+    let balance = if token_address == Address::zero() {
+        U256::MAX
+    } else {
+        blockchain_client
+            .check_balance(subscriber_address, token_address, chain)
+            .await
+            .map_err(|e| RelayerError::ContractRevert(format!("failed to check balance: {}", e)))?
+    };
 
     // verify amounts match between database and chain
     if payment_amount != on_chain_subscription.amount {
@@ -1234,14 +1265,20 @@ async fn validate_payment_job_safe(
         ));
     }
 
-    if balance < payment_amount {
+    if token_address != Address::zero() && balance < payment_amount {
         return Ok(ValidationResult::InsufficientBalance);
     }
 
-    let has_allowance = blockchain_client
-        .check_allowance(subscriber_address, payment_amount, chain)
-        .await
-        .map_err(|e| RelayerError::ContractRevert(format!("failed to check allowance: {}", e)))?;
+    let has_allowance = if token_address == Address::zero() {
+        true
+    } else {
+        blockchain_client
+            .check_allowance(subscriber_address, token_address, payment_amount, chain)
+            .await
+            .map_err(|e| {
+                RelayerError::ContractRevert(format!("failed to check allowance: {}", e))
+            })?
+    };
 
     if !has_allowance {
         return Ok(ValidationResult::InsufficientAllowance);
@@ -1625,6 +1662,7 @@ mod tests {
             max_total_amount: "12000000".to_string(),
             expiry: Utc::now() + chrono::Duration::days(365),
             nonce: 1,
+            token: "0x0000000000000000000000000000000000000000".to_string(),
             status: "ACTIVE".to_string(),
             executed_payments: 0,
             total_paid: "0".to_string(),

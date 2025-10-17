@@ -106,7 +106,7 @@ async fn test_blockchain_client_with_anvil() {
     );
     let subscription_manager_sepolia = manager_factory
         .deploy((
-            mock_pyusd_sepolia.address(),
+            vec![mock_pyusd_sepolia.address()],
             relayer_registry_sepolia.address(),
         ))
         .unwrap()
@@ -152,7 +152,10 @@ async fn test_blockchain_client_with_anvil() {
         client_base.clone(),
     );
     let subscription_manager_base = manager_factory_base
-        .deploy((mock_pyusd_base.address(), relayer_registry_base.address()))
+        .deploy((
+            vec![mock_pyusd_base.address()],
+            relayer_registry_base.address(),
+        ))
         .unwrap()
         .send()
         .await
@@ -238,7 +241,7 @@ async fn test_blockchain_client_with_anvil() {
         .expect("base connection");
 
     let balance = client
-        .check_balance(wallet_sepolia.address(), "sepolia")
+        .check_balance(wallet_sepolia.address(), Address::zero(), "sepolia")
         .await
         .expect("balance check");
     assert!(balance > U256::zero());

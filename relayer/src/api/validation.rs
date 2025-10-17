@@ -198,7 +198,7 @@ impl ValidationService {
 
     fn hash_subscription_intent(intent: &SubscriptionIntent) -> Result<[u8; 32]> {
         let type_hash = keccak256(
-            b"SubscriptionIntent(address subscriber,address merchant,uint256 amount,uint256 interval,uint256 startTime,uint256 maxPayments,uint256 maxTotalAmount,uint256 expiry,uint256 nonce)",
+            b"SubscriptionIntent(address subscriber,address merchant,uint256 amount,uint256 interval,uint256 startTime,uint256 maxPayments,uint256 maxTotalAmount,uint256 expiry,uint256 nonce,address token)",
         );
 
         let subscriber = Address::from_str(&intent.subscriber)
@@ -214,6 +214,8 @@ impl ValidationService {
             .map_err(|_| RelayerError::Validation("invalid max total amount format".to_string()))?;
         let expiry = U256::from(intent.expiry);
         let nonce = U256::from(intent.nonce);
+        let token_addr = Address::from_str(&intent.token)
+            .map_err(|_| RelayerError::Validation("invalid token address".to_string()))?;
 
         let encoded = encode(&[
             Token::FixedBytes(type_hash.to_vec()),
@@ -226,6 +228,7 @@ impl ValidationService {
             Token::Uint(max_total_amount),
             Token::Uint(expiry),
             Token::Uint(nonce),
+            Token::Address(token_addr),
         ]);
 
         Ok(keccak256(&encoded))

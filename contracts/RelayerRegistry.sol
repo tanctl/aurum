@@ -99,7 +99,7 @@ contract RelayerRegistry is ReentrancyGuard, Ownable {
         require(relayers[msg.sender].stakedAmount == 0, "Relayer already registered");
         require(stakeAmount >= MINIMUM_STAKE, "Insufficient stake amount");
 
-        // stake tokens to become active relayer
+        // staking remains pyusd-specific while subscriptions may settle in other supported tokens
         IERC20 token = IERC20(PYUSD_ADDRESS);
         token.safeTransferFrom(msg.sender, address(this), stakeAmount);
 

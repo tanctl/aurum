@@ -14,6 +14,7 @@ pub struct Subscription {
     pub max_total_amount: String,
     pub expiry: DateTime<Utc>,
     pub nonce: i64,
+    pub token: String,
     pub status: String, // "ACTIVE", "PAUSED", "CANCELLED", "EXPIRED", "COMPLETED"
     pub executed_payments: i64,
     pub total_paid: String, // large numbers

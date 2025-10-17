@@ -23,6 +23,7 @@ fn sample_subscription(id: &str) -> Subscription {
         max_total_amount: "5000".to_string(),
         expiry: Utc::now() + chrono::Duration::hours(1),
         nonce: 0,
+        token: "0x0000000000000000000000000000000000000000".to_string(),
         status: "ACTIVE".to_string(),
         executed_payments: 0,
         total_paid: "0".to_string(),

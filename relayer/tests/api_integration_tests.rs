@@ -96,6 +96,7 @@ fn create_test_intent() -> SubscriptionIntent {
         max_total_amount: "12000000000000000000".to_string(), // 12 ETH
         expiry: now + (365 * 24 * 60 * 60),                   // 1 year
         nonce: 1,
+        token: "0x0000000000000000000000000000000000000000".to_string(),
     }
 }
 

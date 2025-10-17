@@ -36,9 +36,9 @@ use url::Url;
 // - Wherever HyperSync is unavailable, callers fall back to standard data sources.
 const CHUNK_SIZE: u64 = 100_000;
 const PAYMENT_EXECUTED_SIGNATURE: &str =
-    "PaymentExecuted(bytes32,address,address,uint256,uint256,uint256,address)";
+    "PaymentExecuted(bytes32,address,address,address,uint256,uint256,uint256,address)";
 const SUBSCRIPTION_CREATED_SIGNATURE: &str =
-    "SubscriptionCreated(bytes32,address,address,uint256,uint256,uint256,uint256,uint256)";
+    "SubscriptionCreated(bytes32,address,address,address,uint256,uint256,uint256,uint256,uint256)";
 
 #[derive(Clone)]
 pub struct HyperSyncClient {
@@ -56,6 +56,7 @@ pub struct RawPaymentEvent {
     pub subscription_id: String,
     pub subscriber: String,
     pub merchant: String,
+    pub token: String,
     pub payment_number: u64,
     pub amount: U256,
     pub fee: U256,
@@ -70,6 +71,7 @@ pub struct RawSubscriptionEvent {
     pub subscription_id: String,
     pub subscriber: String,
     pub merchant: String,
+    pub token: String,
     pub amount: U256,
     pub interval: U256,
     pub max_payments: U256,
@@ -229,9 +231,12 @@ impl HyperSyncClient {
         ))
     }
 
-    fn decode_payment_fields(data: &[u8]) -> Result<(u64, U256, U256, EthersAddress)> {
+    fn decode_payment_fields(
+        data: &[u8],
+    ) -> Result<(EthersAddress, u64, U256, U256, EthersAddress)> {
         let decoded = abi::decode(
             &[
+                abi::ParamType::Address,
                 abi::ParamType::Uint(256),
                 abi::ParamType::Uint(256),
                 abi::ParamType::Uint(256),
@@ -241,30 +246,37 @@ impl HyperSyncClient {
         )
         .map_err(|e| RelayerError::InternalError(format!("failed to decode payment log: {}", e)))?;
 
-        let payment_number = decoded[0]
+        let token = decoded[0]
+            .clone()
+            .into_address()
+            .ok_or_else(|| RelayerError::InternalError("missing token".to_string()))?;
+        let payment_number = decoded[1]
             .clone()
             .into_uint()
             .ok_or_else(|| RelayerError::InternalError("missing payment number".to_string()))?
             .as_u64();
-        let amount = decoded[1]
+        let amount = decoded[2]
             .clone()
             .into_uint()
             .ok_or_else(|| RelayerError::InternalError("missing payment amount".to_string()))?;
-        let fee = decoded[2]
+        let fee = decoded[3]
             .clone()
             .into_uint()
             .ok_or_else(|| RelayerError::InternalError("missing protocol fee".to_string()))?;
-        let relayer = decoded[3]
+        let relayer = decoded[4]
             .clone()
             .into_address()
-            .ok_or_else(|| RelayerError::InternalError("missing relayer address".to_string()))?;
+            .ok_or_else(|| RelayerError::InternalError("missing relayer".to_string()))?;
 
-        Ok((payment_number, amount, fee, relayer))
+        Ok((token, payment_number, amount, fee, relayer))
     }
 
-    fn decode_subscription_fields(data: &[u8]) -> Result<(U256, U256, U256, U256, U256)> {
+    fn decode_subscription_fields(
+        data: &[u8],
+    ) -> Result<(EthersAddress, U256, U256, U256, U256, U256)> {
         let decoded = abi::decode(
             &[
+                abi::ParamType::Address,
                 abi::ParamType::Uint(256),
                 abi::ParamType::Uint(256),
                 abi::ParamType::Uint(256),
@@ -277,28 +289,38 @@ impl HyperSyncClient {
             RelayerError::InternalError(format!("failed to decode subscription log: {}", e))
         })?;
 
-        let amount = decoded[0]
+        let token = decoded[0]
+            .clone()
+            .into_address()
+            .ok_or_else(|| RelayerError::InternalError("missing token".to_string()))?;
+        let amount = decoded[1].clone().into_uint().ok_or_else(|| {
+            RelayerError::InternalError("missing subscription amount".to_string())
+        })?;
+        let interval = decoded[2]
             .clone()
             .into_uint()
-            .ok_or_else(|| RelayerError::InternalError("missing amount field".to_string()))?;
-        let interval = decoded[1]
+            .ok_or_else(|| RelayerError::InternalError("missing interval".to_string()))?;
+        let max_payments = decoded[3]
             .clone()
             .into_uint()
-            .ok_or_else(|| RelayerError::InternalError("missing interval field".to_string()))?;
-        let max_payments = decoded[2]
+            .ok_or_else(|| RelayerError::InternalError("missing max payments".to_string()))?;
+        let max_total_amount = decoded[4]
             .clone()
             .into_uint()
-            .ok_or_else(|| RelayerError::InternalError("missing max payments field".to_string()))?;
-        let max_total_amount = decoded[3]
+            .ok_or_else(|| RelayerError::InternalError("missing max total amount".to_string()))?;
+        let expiry = decoded[5]
             .clone()
             .into_uint()
-            .ok_or_else(|| RelayerError::InternalError("missing max total field".to_string()))?;
-        let expiry = decoded[4]
-            .clone()
-            .into_uint()
-            .ok_or_else(|| RelayerError::InternalError("missing expiry field".to_string()))?;
+            .ok_or_else(|| RelayerError::InternalError("missing expiry".to_string()))?;
 
-        Ok((amount, interval, max_payments, max_total_amount, expiry))
+        Ok((
+            token,
+            amount,
+            interval,
+            max_payments,
+            max_total_amount,
+            expiry,
+        ))
     }
 
     fn map_payment_event(chain_id: u64, event: Event) -> Result<RawPaymentEvent> {
@@ -338,7 +360,8 @@ impl HyperSyncClient {
                 RelayerError::InternalError("payment log missing data".to_string())
             })?;
 
-        let (payment_number, amount, fee, relayer) = Self::decode_payment_fields(data.as_ref())?;
+        let (token, payment_number, amount, fee, relayer) =
+            Self::decode_payment_fields(data.as_ref())?;
 
         let block_number = event.log.block_number.map(Into::into).ok_or_else(|| {
             RelayerError::InternalError("payment log missing block number".to_string())
@@ -360,6 +383,7 @@ impl HyperSyncClient {
             subscription_id,
             subscriber,
             merchant,
+            token: format!("0x{:x}", token),
             payment_number,
             amount,
             fee,
@@ -381,7 +405,7 @@ impl HyperSyncClient {
 
         let (subscription_id, subscriber, merchant) =
             Self::parse_topic_addresses(subscription_topic, subscriber_topic, merchant_topic)?;
-        let (payment_number, amount, fee, relayer) =
+        let (token, payment_number, amount, fee, relayer) =
             Self::decode_payment_fields(log.data.as_ref())?;
 
         let block_number = log.block_number.map(|n| n.as_u64()).ok_or_else(|| {
@@ -396,6 +420,7 @@ impl HyperSyncClient {
             subscription_id,
             subscriber,
             merchant,
+            token: format!("0x{:x}", token),
             payment_number,
             amount,
             fee,
@@ -441,7 +466,7 @@ impl HyperSyncClient {
             RelayerError::InternalError("subscription log missing data".to_string())
         })?;
 
-        let (amount, interval, max_payments, max_total_amount, expiry) =
+        let (token, amount, interval, max_payments, max_total_amount, expiry) =
             Self::decode_subscription_fields(data.as_ref())?;
 
         let block_number = event.log.block_number.map(Into::into).ok_or_else(|| {
@@ -463,6 +488,7 @@ impl HyperSyncClient {
             subscription_id,
             subscriber,
             merchant,
+            token: format!("0x{:x}", token),
             amount,
             interval,
             max_payments,
@@ -485,7 +511,7 @@ impl HyperSyncClient {
 
         let (subscription_id, subscriber, merchant) =
             Self::parse_topic_addresses(subscription_topic, subscriber_topic, merchant_topic)?;
-        let (amount, interval, max_payments, max_total_amount, expiry) =
+        let (token, amount, interval, max_payments, max_total_amount, expiry) =
             Self::decode_subscription_fields(log.data.as_ref())?;
 
         let block_number = log.block_number.map(|n| n.as_u64()).ok_or_else(|| {
@@ -500,6 +526,7 @@ impl HyperSyncClient {
             subscription_id,
             subscriber,
             merchant,
+            token: format!("0x{:x}", token),
             amount,
             interval,
             max_payments,
@@ -894,6 +921,7 @@ impl HyperSyncClient {
             id: event.subscription_id.clone(),
             subscriber: format!("0x{:x}", on_chain.subscriber),
             merchant: format!("0x{:x}", on_chain.merchant),
+            token: format!("0x{:x}", on_chain.token),
             amount: on_chain.amount.to_string(),
             interval_seconds: i64::try_from(interval_secs).unwrap_or(i64::MAX),
             start_time,

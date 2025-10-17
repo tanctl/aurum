@@ -46,6 +46,8 @@ pub struct PaymentEvent {
     pub chain_id: i64,
     pub merchant: Option<String>,
     pub subscriber: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -77,6 +79,8 @@ pub struct SubscriptionData {
     pub created_at_block: i64,
     #[serde(rename = "chainId", deserialize_with = "deserialize_i64")]
     pub chain_id: i64,
+    #[serde(default)]
+    pub token: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -254,6 +258,7 @@ impl RemoteEnvioClient {
                 chainId
                 merchant
                 subscriber
+                token
             }
             Payment_aggregate(where: { merchant: { _eq: $merchant } }) {
                 aggregate {
@@ -375,6 +380,7 @@ impl RemoteEnvioClient {
                 createdAt
                 createdAtBlock
                 chainId
+                token
             }
         }
         "#;
@@ -410,6 +416,7 @@ impl RemoteEnvioClient {
                 chainId
                 merchant
                 subscriber
+                token
             }
         }
         "#;
@@ -454,6 +461,9 @@ impl RemoteEnvioClient {
             block_number: event.block_number as u64,
             timestamp: event.timestamp as u64,
             chain: event.chain_id.to_string(),
+            token: event
+                .token
+                .unwrap_or_else(|| "0x0000000000000000000000000000000000000000".to_string()),
         })
     }
 

@@ -1,4 +1,4 @@
-use super::contract_bindings::{MockPYUSD, SubscriptionManager};
+use super::contract_bindings::{MockPYUSD, SubscriptionManager, IERC20};
 use crate::config::Config;
 use crate::error::{RelayerError, Result};
 use chrono::Utc;
@@ -49,6 +49,7 @@ pub struct SubscriptionData {
     pub max_total_amount: U256,
     pub expiry: U256,
     pub nonce: U256,
+    pub token: Address,
     pub status: u8,
     pub executed_payments: U256,
     pub total_paid: U256,
@@ -110,13 +111,14 @@ impl BlockchainClient {
     pub async fn check_allowance(
         &self,
         subscriber: Address,
+        token: Address,
         amount: U256,
         chain: &str,
     ) -> Result<bool> {
         if let Some(real) = &self.real {
-            real.check_allowance(subscriber, amount, chain).await
+            real.check_allowance(subscriber, token, amount, chain).await
         } else if let Some(stub) = &self.stub {
-            stub.check_allowance(subscriber, amount, chain).await
+            stub.check_allowance(subscriber, token, amount, chain).await
         } else {
             Err(RelayerError::InternalError(
                 "blockchain client not initialised".to_string(),
@@ -124,11 +126,16 @@ impl BlockchainClient {
         }
     }
 
-    pub async fn check_balance(&self, subscriber: Address, chain: &str) -> Result<U256> {
+    pub async fn check_balance(
+        &self,
+        subscriber: Address,
+        token: Address,
+        chain: &str,
+    ) -> Result<U256> {
         if let Some(real) = &self.real {
-            real.check_balance(subscriber, chain).await
+            real.check_balance(subscriber, token, chain).await
         } else if let Some(stub) = &self.stub {
-            stub.check_balance(subscriber, chain).await
+            stub.check_balance(subscriber, token, chain).await
         } else {
             Err(RelayerError::InternalError(
                 "blockchain client not initialised".to_string(),
@@ -430,6 +437,7 @@ impl RealBlockchainClient {
             max_total_amount: subscription.max_total_amount,
             expiry: subscription.expiry,
             nonce: subscription.nonce,
+            token: subscription.token,
             status: subscription.status,
             executed_payments,
             total_paid: executed_payments * subscription.amount,
@@ -442,18 +450,24 @@ impl RealBlockchainClient {
     async fn check_allowance(
         &self,
         subscriber: Address,
+        token: Address,
         amount: U256,
         chain: &str,
     ) -> Result<bool> {
+        if token == Address::zero() {
+            return Ok(true);
+        }
+
         info!(
-            "checking allowance for subscriber {:?} amount {} on chain {}",
-            subscriber, amount, chain
+            "checking allowance for subscriber {:?} token {:?} amount {} on chain {}",
+            subscriber, token, amount, chain
         );
 
-        let (_, subscription_manager, pyusd) = self.get_provider_and_contracts(chain)?;
+        let (provider, subscription_manager, _) = self.get_provider_and_contracts(chain)?;
         let contract_address = subscription_manager.address();
 
-        let allowance = pyusd
+        let erc20 = IERC20::new(token, provider.clone());
+        let allowance = erc20
             .allowance(subscriber, contract_address)
             .call()
             .await
@@ -470,20 +484,38 @@ impl RealBlockchainClient {
         Ok(has_sufficient_allowance)
     }
 
-    async fn check_balance(&self, subscriber: Address, chain: &str) -> Result<U256> {
+    async fn check_balance(
+        &self,
+        subscriber: Address,
+        token: Address,
+        chain: &str,
+    ) -> Result<U256> {
+        if token == Address::zero() {
+            let (provider, _, _) = self.get_provider_and_contracts(chain)?;
+            let balance = provider.get_balance(subscriber, None).await.map_err(|e| {
+                RelayerError::ContractRevert(format!("failed to check balance: {}", e))
+            })?;
+            info!(
+                "subscriber {:?} eth balance: {} on {}",
+                subscriber, balance, chain
+            );
+            return Ok(balance);
+        }
+
         info!(
-            "checking balance for subscriber {:?} on chain {}",
-            subscriber, chain
+            "checking erc20 balance for subscriber {:?} token {:?} on chain {}",
+            subscriber, token, chain
         );
 
-        let (_, _, pyusd) = self.get_provider_and_contracts(chain)?;
+        let (provider, _, _) = self.get_provider_and_contracts(chain)?;
+        let erc20 = IERC20::new(token, provider.clone());
 
         let balance =
-            pyusd.balance_of(subscriber).call().await.map_err(|e| {
+            erc20.balance_of(subscriber).call().await.map_err(|e| {
                 RelayerError::ContractRevert(format!("failed to check balance: {}", e))
             })?;
 
-        info!("subscriber {:?} balance: {}", subscriber, balance);
+        info!("subscriber {:?} erc20 balance: {}", subscriber, balance);
         Ok(balance)
     }
 
@@ -504,26 +536,29 @@ impl RealBlockchainClient {
             .await?
             .ok_or_else(|| RelayerError::NotFound("subscription not found".to_string()))?;
 
-        let has_allowance = self
-            .check_allowance(
-                subscription_data.subscriber,
-                subscription_data.amount,
-                chain,
-            )
-            .await?;
-        if !has_allowance {
-            return Err(RelayerError::ContractRevert(
-                "insufficient allowance for subscription execution".to_string(),
-            ));
-        }
+        if subscription_data.token != Address::zero() {
+            let has_allowance = self
+                .check_allowance(
+                    subscription_data.subscriber,
+                    subscription_data.token,
+                    subscription_data.amount,
+                    chain,
+                )
+                .await?;
+            if !has_allowance {
+                return Err(RelayerError::ContractRevert(
+                    "insufficient allowance for subscription execution".to_string(),
+                ));
+            }
 
-        let balance = self
-            .check_balance(subscription_data.subscriber, chain)
-            .await?;
-        if balance < subscription_data.amount {
-            return Err(RelayerError::ContractRevert(
-                "insufficient balance for subscription execution".to_string(),
-            ));
+            let balance = self
+                .check_balance(subscription_data.subscriber, subscription_data.token, chain)
+                .await?;
+            if balance < subscription_data.amount {
+                return Err(RelayerError::ContractRevert(
+                    "insufficient balance for subscription execution".to_string(),
+                ));
+            }
         }
 
         let gas_estimate = subscription_manager
@@ -821,6 +856,7 @@ impl StubBlockchainClient {
     async fn check_allowance(
         &self,
         _subscriber: Address,
+        _token: Address,
         _amount: U256,
         chain: &str,
     ) -> Result<bool> {
@@ -832,7 +868,12 @@ impl StubBlockchainClient {
         Ok(true)
     }
 
-    async fn check_balance(&self, _subscriber: Address, chain: &str) -> Result<U256> {
+    async fn check_balance(
+        &self,
+        _subscriber: Address,
+        _token: Address,
+        chain: &str,
+    ) -> Result<U256> {
         let normalized = Self::normalize_chain(chain)?;
         info!(
             "stub blockchain client returning large balance for chain {}",
@@ -953,6 +994,7 @@ impl StubBlockchainClient {
             max_total_amount: U256::from(0),
             expiry: U256::from(u64::MAX),
             nonce: U256::from(0),
+            token: Address::zero(),
             status: 0,
             executed_payments: U256::zero(),
             total_paid: U256::zero(),

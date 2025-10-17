@@ -150,6 +150,7 @@ pub async fn submit_intent_handler(
         expiry: chrono::DateTime::from_timestamp(request.intent.expiry as i64, 0)
             .ok_or_else(|| RelayerError::Validation("invalid expiry time".to_string()))?,
         nonce: request.intent.nonce as i64,
+        token: request.intent.token.clone(),
         status: "ACTIVE".to_string(),
         executed_payments: 0,
         total_paid: "0".to_string(),
@@ -237,6 +238,7 @@ pub async fn get_subscription_handler(
         max_total_amount: subscription.max_total_amount,
         expiry: subscription.expiry.timestamp() as u64,
         nonce: subscription.nonce as u64,
+        token: subscription.token,
         status: subscription.status,
         executed_payments: subscription.executed_payments as u64,
         total_paid: subscription.total_paid,
@@ -393,6 +395,7 @@ pub async fn get_merchant_transactions_handler(
                         block_number: event.block_number,
                         timestamp,
                         chain: chain_name.to_string(),
+                        token: event.token.clone(),
                     });
                 }
 

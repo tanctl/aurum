@@ -55,6 +55,7 @@ export function handleSubscriptionCreated(event: SubscriptionCreated): void {
   entity.subscriptionId = event.params.subscriptionId;
   entity.subscriber = event.params.subscriber;
   entity.merchant = event.params.merchant;
+  entity.token = event.params.token;
   entity.amount = event.params.amount;
   entity.interval = event.params.interval;
   entity.startTime = event.block.timestamp;
@@ -153,6 +154,7 @@ export function handlePaymentExecuted(event: PaymentExecuted): void {
   payment.amount = event.params.amount;
   payment.fee = event.params.fee;
   payment.relayer = event.params.relayer;
+  payment.token = event.params.token;
   payment.txHash = event.transaction.hash;
   payment.blockNumber = event.block.number;
   payment.timestamp = event.block.timestamp;

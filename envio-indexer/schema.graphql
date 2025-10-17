@@ -3,6 +3,7 @@ type Subscription @entity {
   subscriptionId: Bytes!
   subscriber: Bytes!
   merchant: Bytes!
+  token: Bytes!
   amount: BigInt!
   interval: BigInt!
   startTime: BigInt!
@@ -24,6 +25,7 @@ type Payment @entity {
   amount: BigInt!
   fee: BigInt!
   relayer: Bytes!
+  token: Bytes!
   txHash: Bytes!
   blockNumber: BigInt!
   timestamp: BigInt!
