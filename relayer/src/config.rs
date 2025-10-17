@@ -26,6 +26,9 @@ pub struct Config {
     pub avail_secret_uri: Option<String>,
     pub hypersync_url_sepolia: Option<String>,
     pub hypersync_url_base: Option<String>,
+    pub nexus_rpc_url: Option<String>,
+    pub nexus_application_id: Option<String>,
+    pub nexus_signer_key: Option<String>,
 }
 
 impl Config {
@@ -86,6 +89,9 @@ impl Config {
             avail_secret_uri: env::var("AVAIL_SECRET_URI").ok(),
             hypersync_url_sepolia: env::var("HYPERSYNC_URL_SEPOLIA").ok(),
             hypersync_url_base: env::var("HYPERSYNC_URL_BASE").ok(),
+            nexus_rpc_url: env::var("NEXUS_RPC_URL").ok(),
+            nexus_application_id: env::var("NEXUS_APP_ID").ok(),
+            nexus_signer_key: env::var("NEXUS_SIGNER_KEY").ok(),
         };
 
         // validate eth addresses
@@ -157,6 +163,33 @@ impl Config {
             }
         }
 
+        if self.nexus_partial_configuration() {
+            return Err(anyhow::anyhow!(
+                "Nexus configuration requires NEXUS_RPC_URL, NEXUS_APP_ID, and NEXUS_SIGNER_KEY"
+            ));
+        }
+
+        if let Some(url) = &self.nexus_rpc_url {
+            let valid_prefix = url.starts_with("http://")
+                || url.starts_with("https://")
+                || url.starts_with("ws://")
+                || url.starts_with("wss://");
+            if !valid_prefix {
+                return Err(anyhow::anyhow!(
+                    "NEXUS_RPC_URL must start with http(s):// or ws(s)://"
+                ));
+            }
+        }
+
+        if let Some(key) = &self.nexus_signer_key {
+            let key = key.trim_start_matches("0x");
+            if key.len() < 32 || !key.chars().all(|c| c.is_ascii_hexdigit()) {
+                return Err(anyhow::anyhow!(
+                    "NEXUS_SIGNER_KEY must be a hex string of at least 16 bytes (32 hex chars)"
+                ));
+            }
+        }
+
         let avail_rpc_specified = self
             .avail_rpc_url
             .as_ref()
@@ -215,6 +248,31 @@ impl Config {
         }
 
         Ok(())
+    }
+
+    pub fn nexus_enabled(&self) -> bool {
+        self.nexus_rpc_url.is_some()
+            && self.nexus_application_id.is_some()
+            && self.nexus_signer_key.is_some()
+    }
+
+    pub fn nexus_settings(&self) -> Option<(String, String, String)> {
+        if self.nexus_enabled() {
+            Some((
+                self.nexus_rpc_url.clone().unwrap(),
+                self.nexus_signer_key.clone().unwrap(),
+                self.nexus_application_id.clone().unwrap(),
+            ))
+        } else {
+            None
+        }
+    }
+
+    fn nexus_partial_configuration(&self) -> bool {
+        let count = self.nexus_rpc_url.is_some() as u8
+            + self.nexus_application_id.is_some() as u8
+            + self.nexus_signer_key.is_some() as u8;
+        count > 0 && count < 3
     }
 
     pub fn subscription_manager_address_for_chain(&self, chain: &str) -> Result<&str> {

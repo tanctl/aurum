@@ -191,7 +191,7 @@ impl HyperSyncClient {
         let mut query =
             preset_query::logs_of_event(from_block, Some(to_block), topic.clone(), address);
 
-        // Ensure we capture related transactions for context (hash & block references).
+        // make sure each decoded log carries transaction context for downstream processing
         query.field_selection.transaction.insert("hash".to_owned());
         query
             .field_selection

@@ -1,5 +1,6 @@
 use relayer::{
-    AvailClient, BlockchainClient, Config, Database, HyperSyncClient, Metrics, Scheduler,
+    AvailClient, BlockchainClient, Config, Database, HyperSyncClient, Metrics, NexusClient,
+    Scheduler, SchedulerContext,
 };
 use std::sync::Arc;
 
@@ -31,16 +32,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
-    let mut scheduler = Scheduler::new(
-        Arc::clone(&queries),
-        Arc::clone(&blockchain_client),
-        Arc::clone(&avail_client),
+    let nexus_client = if let Some((rpc_url, signer_key, app_id)) = config.nexus_settings() {
+        match NexusClient::new(&rpc_url, &signer_key, &app_id).await {
+            Ok(client) => Some(Arc::new(client)),
+            Err(err) => {
+                eprintln!("failed to initialise Nexus client: {err}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let scheduler_context = SchedulerContext {
+        queries: Arc::clone(&queries),
+        blockchain_client: Arc::clone(&blockchain_client),
+        avail_client: Arc::clone(&avail_client),
         hypersync_client,
+        nexus_client,
         metrics,
-        config.clone(),
-        pool.clone(),
-    )
-    .await?;
+        config: config.clone(),
+        pool: pool.clone(),
+    };
+
+    let mut scheduler = Scheduler::new(scheduler_context).await?;
 
     println!("starting payment scheduler...");
     scheduler.start().await?;

@@ -173,6 +173,8 @@ pub struct HealthResponse {
     pub status: String,
     pub timestamp: DateTime<Utc>,
     pub services: HealthServices,
+    #[serde(rename = "nexusLatestBlock")]
+    pub nexus_latest_block: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -180,6 +182,7 @@ pub struct HealthServices {
     pub database: ServiceStatus,
     pub rpc: ServiceStatus,
     pub envio: ServiceStatus,
+    pub nexus: ServiceStatus,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -187,6 +190,25 @@ pub struct ServiceStatus {
     pub healthy: bool,
     pub response_time_ms: Option<u64>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CrossChainVerificationRequest {
+    #[serde(rename = "subscriptionId")]
+    pub subscription_id: String,
+    #[serde(rename = "sourceChainId")]
+    pub source_chain_id: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CrossChainVerificationResponse {
+    pub verified: bool,
+    #[serde(rename = "paymentCount")]
+    pub payment_count: u64,
+    #[serde(rename = "totalAmount")]
+    pub total_amount: String,
+    #[serde(rename = "lastPaymentBlock")]
+    pub last_payment_block: u64,
 }
 
 // envio graphql types

@@ -4065,6 +4065,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
+name = "nexus-sdk"
+version = "0.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "361f270689b99709cbb1997b20109cb6275b93ff187e6ecbff453bf344b43ead"
+
+[[package]]
 name = "nodrop"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5142,6 +5148,7 @@ dependencies = [
  "http 0.2.12",
  "hypersync-client",
  "mockito",
+ "nexus-sdk",
  "pg-embed",
  "reqwest 0.11.27",
  "serde",

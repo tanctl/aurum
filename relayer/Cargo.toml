@@ -41,6 +41,7 @@ avail-rust-client = { version = "0.4.1-rc.1", default-features = false, features
 pg-embed = { version = "0.7.1", default-features = false, features = ["rt_tokio"], optional = true }
 hypersync-client = "0.7"
 url = "2.4"
+nexus-sdk = "0.0.0"
 
 [[example]]
 name = "blockchain_usage"

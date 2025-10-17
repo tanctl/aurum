@@ -31,7 +31,7 @@ pub struct PaymentEvent {
     pub id: String,
     #[serde(rename = "subscriptionId")]
     pub subscription_id: String,
-    #[serde(deserialize_with = "deserialize_i64")]
+    #[serde(rename = "paymentNumber", deserialize_with = "deserialize_i64")]
     pub payment_number: i64,
     pub amount: String,
     pub fee: String,

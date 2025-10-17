@@ -73,6 +73,7 @@ impl BlockchainClient {
         }
 
         if eth_stub || base_stub {
+            // treat any stub endpoint as a hint to stay in deterministic client mode
             info!("initializing blockchain client in stub mode");
             let stub = StubBlockchainClient::new(config)?;
             Ok(Self {

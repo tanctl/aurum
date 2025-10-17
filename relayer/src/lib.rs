@@ -15,7 +15,11 @@ pub mod integrations;
 pub mod metrics;
 pub mod scheduler;
 
-pub use avail::{AvailClient, AvailClientMode};
+pub use avail::{
+    AttestationStatus, AttestationSubmission, AvailClient, AvailClientMode,
+    CrossChainVerificationSummary, NexusClient, NexusClientMode, NexusHealthStatus,
+    PaymentAttestation,
+};
 pub use blockchain::BlockchainClient;
 pub use config::Config;
 pub use database::Database;
@@ -23,7 +27,7 @@ pub use error::{RelayerError, Result};
 pub use integrations::envio::EnvioClient;
 pub use integrations::hypersync::HyperSyncClient;
 pub use metrics::{Metrics, MetricsSnapshot};
-pub use scheduler::Scheduler;
+pub use scheduler::{Scheduler, SchedulerContext};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -33,5 +37,6 @@ pub struct AppState {
     pub avail_client: avail::AvailClient,
     pub envio_client: EnvioClient,
     pub hypersync_client: Option<std::sync::Arc<HyperSyncClient>>,
+    pub nexus_client: Option<std::sync::Arc<NexusClient>>,
     pub metrics: std::sync::Arc<Metrics>,
 }

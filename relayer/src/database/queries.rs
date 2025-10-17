@@ -2,7 +2,8 @@
 
 use super::{
     models::{
-        Execution, ExecutionRecord, IntentCache, Subscription, SubscriptionStatus, SyncMetadata,
+        CrossChainVerificationRecord, Execution, ExecutionRecord, IntentCache,
+        PendingNexusAttestation, Subscription, SubscriptionStatus, SyncMetadata,
     },
     StubStorage,
 };
@@ -676,9 +677,8 @@ impl Queries {
 
         let pool = self.require_postgres("get_merchant_executions")?;
 
-        let executions = sqlx::query_as!(
-            Execution,
-            r#"
+        let executions = sqlx::query_as::<_, Execution>(
+            "
             SELECT
                 e.id,
                 e.subscription_id,
@@ -694,16 +694,19 @@ impl Queries {
                 e.status,
                 e.error_message,
                 e.executed_at,
-                e.chain
+                e.chain,
+                e.nexus_attestation_id,
+                e.nexus_verified,
+                e.nexus_submitted_at
             FROM executions e
             JOIN subscriptions s ON e.subscription_id = s.id
             WHERE s.merchant = $1
             ORDER BY e.executed_at DESC
             LIMIT $2
-            "#,
-            merchant,
-            limit
+            ",
         )
+        .bind(merchant)
+        .bind(limit)
         .fetch_all(pool)
         .await?;
 
@@ -739,9 +742,8 @@ impl Queries {
 
         let pool = self.require_postgres("get_executions_by_subscription")?;
 
-        let executions = sqlx::query_as!(
-            Execution,
-            r#"
+        let executions = sqlx::query_as::<_, Execution>(
+            "
             SELECT
                 id,
                 subscription_id,
@@ -757,13 +759,16 @@ impl Queries {
                 status,
                 error_message,
                 executed_at,
-                chain
+                chain,
+                nexus_attestation_id,
+                nexus_verified,
+                nexus_submitted_at
             FROM executions
             WHERE subscription_id = $1
             ORDER BY payment_number ASC
-            "#,
-            subscription_id
+            ",
         )
+        .bind(subscription_id)
         .fetch_all(pool)
         .await?;
 
@@ -1381,25 +1386,29 @@ impl Queries {
         let pool = self.require_postgres("insert_execution_record")?;
         let record = execution_record.clone();
 
-        sqlx::query!(
-            r#"
+        sqlx::query(
+            "
             INSERT INTO executions (
                 subscription_id, relayer_address, payment_number, amount_paid,
                 protocol_fee, merchant_amount, transaction_hash, block_number,
-                gas_used, gas_price, status, executed_at, chain
-            ) VALUES ($1, '', $2, $3, $4, '', $5, $6, $7, $8, 'SUCCESS', $9, $10)
-            "#,
-            record.subscription_id,
-            record.payment_number,
-            record.payment_amount,
-            record.fee_paid,
-            record.transaction_hash,
-            record.block_number,
-            record.gas_used,
-            record.gas_price,
-            record.executed_at,
-            record.chain
+                gas_used, gas_price, status, executed_at, chain,
+                nexus_attestation_id, nexus_verified, nexus_submitted_at
+            ) VALUES ($1, '', $2, $3, $4, '', $5, $6, $7, $8, 'SUCCESS', $9, $10, $11, $12, $13)
+            ",
         )
+        .bind(&record.subscription_id)
+        .bind(record.payment_number)
+        .bind(&record.payment_amount)
+        .bind(&record.fee_paid)
+        .bind(&record.transaction_hash)
+        .bind(record.block_number)
+        .bind(&record.gas_used)
+        .bind(&record.gas_price)
+        .bind(record.executed_at)
+        .bind(&record.chain)
+        .bind(&record.nexus_attestation_id)
+        .bind(record.nexus_verified)
+        .bind(&record.nexus_submitted_at)
         .execute(pool)
         .await?;
 
@@ -1566,6 +1575,9 @@ impl Queries {
                 error_message: None,
                 executed_at: record_clone.executed_at,
                 chain: record_clone.chain.clone(),
+                nexus_attestation_id: record_clone.nexus_attestation_id.clone(),
+                nexus_verified: record_clone.nexus_verified,
+                nexus_submitted_at: record_clone.nexus_submitted_at,
             };
             storage.executions.lock().unwrap().push(execution_entry);
 
@@ -1627,25 +1639,29 @@ impl Queries {
         }
 
         // insert execution record with comprehensive data
-        sqlx::query!(
-            r#"
+        sqlx::query(
+            "
             INSERT INTO executions (
                 subscription_id, relayer_address, payment_number, amount_paid,
                 protocol_fee, merchant_amount, transaction_hash, block_number,
-                gas_used, gas_price, status, executed_at, chain
-            ) VALUES ($1, '', $2, $3, $4, '', $5, $6, $7, $8, 'SUCCESS', $9, $10)
-            "#,
-            execution_record.subscription_id,
-            execution_record.payment_number,
-            execution_record.payment_amount,
-            execution_record.fee_paid,
-            execution_record.transaction_hash,
-            execution_record.block_number,
-            execution_record.gas_used,
-            execution_record.gas_price,
-            execution_record.executed_at,
-            execution_record.chain
+                gas_used, gas_price, status, executed_at, chain,
+                nexus_attestation_id, nexus_verified, nexus_submitted_at
+            ) VALUES ($1, '', $2, $3, $4, '', $5, $6, $7, $8, 'SUCCESS', $9, $10, $11, $12, $13)
+            ",
         )
+        .bind(&execution_record.subscription_id)
+        .bind(execution_record.payment_number)
+        .bind(&execution_record.payment_amount)
+        .bind(&execution_record.fee_paid)
+        .bind(&execution_record.transaction_hash)
+        .bind(execution_record.block_number)
+        .bind(&execution_record.gas_used)
+        .bind(&execution_record.gas_price)
+        .bind(execution_record.executed_at)
+        .bind(&execution_record.chain)
+        .bind(&execution_record.nexus_attestation_id)
+        .bind(execution_record.nexus_verified)
+        .bind(&execution_record.nexus_submitted_at)
         .execute(&mut *tx)
         .await?;
 
@@ -1819,6 +1835,9 @@ impl Queries {
                 payment_number,
                 chain: chain.to_string(),
                 executed_at,
+                nexus_attestation_id: None,
+                nexus_verified: false,
+                nexus_submitted_at: None,
             };
             let existing = records
                 .iter()
@@ -1847,9 +1866,12 @@ impl Queries {
                 gas_price,
                 status,
                 executed_at,
-                chain
+                chain,
+                nexus_attestation_id,
+                nexus_verified,
+                nexus_submitted_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '0', '0', 'SUCCESS', $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '0', '0', 'SUCCESS', $9, $10, NULL, false, NULL)
             ON CONFLICT (transaction_hash) DO NOTHING
             "#,
         )
@@ -1867,5 +1889,129 @@ impl Queries {
         .await?;
 
         Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn get_pending_nexus_attestations(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<PendingNexusAttestation>> {
+        if let Some(storage) = self.stub_storage() {
+            let records = storage.execution_records.lock().unwrap();
+            let mut pending: Vec<PendingNexusAttestation> = records
+                .iter()
+                .filter(|record| {
+                    record
+                        .nexus_attestation_id
+                        .as_ref()
+                        .map(|_| !record.nexus_verified)
+                        .unwrap_or(false)
+                })
+                .take(limit as usize)
+                .map(|record| PendingNexusAttestation {
+                    id: record.id,
+                    subscription_id: record.subscription_id.clone(),
+                    transaction_hash: record.transaction_hash.clone(),
+                    nexus_attestation_id: record.nexus_attestation_id.clone().unwrap_or_default(),
+                    chain: record.chain.clone(),
+                })
+                .collect();
+            pending.sort_by_key(|entry| entry.id);
+            return Ok(pending);
+        }
+
+        let pool = self.require_postgres("get_pending_nexus_attestations")?;
+        let rows = sqlx::query_as::<_, PendingNexusAttestation>(
+            "
+            SELECT id, subscription_id, transaction_hash, nexus_attestation_id, chain
+            FROM executions
+            WHERE nexus_attestation_id IS NOT NULL AND nexus_verified = false
+            ORDER BY executed_at ASC
+            LIMIT $1
+            ",
+        )
+        .bind(limit)
+        .fetch_all(pool)
+        .await?;
+
+        Ok(rows)
+    }
+
+    pub async fn mark_nexus_attestation_verified(&self, attestation_id: &str) -> Result<()> {
+        if let Some(storage) = self.stub_storage() {
+            let mut records = storage.execution_records.lock().unwrap();
+            for record in records.iter_mut() {
+                if record
+                    .nexus_attestation_id
+                    .as_deref()
+                    .map(|id| id == attestation_id)
+                    .unwrap_or(false)
+                {
+                    record.nexus_verified = true;
+                }
+            }
+
+            let mut executions = storage.executions.lock().unwrap();
+            for execution in executions.iter_mut() {
+                if execution
+                    .nexus_attestation_id
+                    .as_deref()
+                    .map(|id| id == attestation_id)
+                    .unwrap_or(false)
+                {
+                    execution.nexus_verified = true;
+                }
+            }
+
+            return Ok(());
+        }
+
+        let pool = self.require_postgres("mark_nexus_attestation_verified")?;
+        sqlx::query("UPDATE executions SET nexus_verified = true WHERE nexus_attestation_id = $1")
+            .bind(attestation_id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn insert_cross_chain_verification(
+        &self,
+        subscription_id: &str,
+        source_chain_id: i32,
+        query_chain_id: i32,
+        attestation_id: Option<&str>,
+        verified: bool,
+    ) -> Result<()> {
+        if let Some(storage) = self.stub_storage() {
+            let mut records = storage.cross_chain_verifications.lock().unwrap();
+            let record = CrossChainVerificationRecord {
+                id: (records.len() + 1) as i64,
+                subscription_id: subscription_id.to_string(),
+                source_chain_id,
+                query_chain_id,
+                attestation_id: attestation_id.map(|id| id.to_string()),
+                verified,
+                queried_at: Utc::now(),
+            };
+            records.push(record);
+            return Ok(());
+        }
+
+        let pool = self.require_postgres("insert_cross_chain_verification")?;
+        sqlx::query(
+            "
+            INSERT INTO cross_chain_verifications (
+                subscription_id, source_chain_id, query_chain_id, attestation_id, verified, queried_at
+            ) VALUES ($1, $2, $3, $4, $5, NOW())
+            ",
+        )
+        .bind(subscription_id)
+        .bind(source_chain_id)
+        .bind(query_chain_id)
+        .bind(attestation_id)
+        .bind(verified)
+        .execute(pool)
+        .await?;
+
+        Ok(())
     }
 }

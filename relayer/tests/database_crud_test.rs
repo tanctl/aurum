@@ -77,6 +77,9 @@ fn sample_execution(subscription: &Subscription) -> Execution {
         error_message: None,
         executed_at: Utc::now(),
         chain: subscription.chain.clone(),
+        nexus_attestation_id: None,
+        nexus_verified: false,
+        nexus_submitted_at: None,
     }
 }
 

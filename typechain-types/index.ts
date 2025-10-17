@@ -30,6 +30,8 @@ export type { IERC165 } from "./@openzeppelin/contracts/utils/introspection/IERC
 export { IERC165__factory } from "./factories/@openzeppelin/contracts/utils/introspection/IERC165__factory";
 export type { ReentrancyGuard } from "./@openzeppelin/contracts/utils/ReentrancyGuard";
 export { ReentrancyGuard__factory } from "./factories/@openzeppelin/contracts/utils/ReentrancyGuard__factory";
+export type { ICrossChainBridge } from "./contracts/interfaces/ICrossChainBridge";
+export { ICrossChainBridge__factory } from "./factories/contracts/interfaces/ICrossChainBridge__factory";
 export type { MockPYUSD } from "./contracts/MockPYUSD";
 export { MockPYUSD__factory } from "./factories/contracts/MockPYUSD__factory";
 export type { RelayerRegistry } from "./contracts/RelayerRegistry";

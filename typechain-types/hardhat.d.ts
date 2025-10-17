@@ -62,6 +62,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.ReentrancyGuard__factory>;
     getContractFactory(
+      name: "ICrossChainBridge",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.ICrossChainBridge__factory>;
+    getContractFactory(
       name: "MockPYUSD",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.MockPYUSD__factory>;
@@ -135,6 +139,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.ReentrancyGuard>;
     getContractAt(
+      name: "ICrossChainBridge",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.ICrossChainBridge>;
+    getContractAt(
       name: "MockPYUSD",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -199,6 +208,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ReentrancyGuard>;
     deployContract(
+      name: "ICrossChainBridge",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ICrossChainBridge>;
+    deployContract(
       name: "MockPYUSD",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.MockPYUSD>;
@@ -271,6 +284,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ReentrancyGuard>;
+    deployContract(
+      name: "ICrossChainBridge",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ICrossChainBridge>;
     deployContract(
       name: "MockPYUSD",
       args: any[],

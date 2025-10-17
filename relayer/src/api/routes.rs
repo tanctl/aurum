@@ -19,6 +19,10 @@ pub fn create_api_routes(app_state: Arc<AppState>) -> Router {
             "/api/v1/merchant/:address/stats",
             get(get_merchant_stats_handler),
         )
+        .route(
+            "/api/v1/verify-cross-chain",
+            post(verify_cross_chain_handler),
+        )
         // health and status routes
         .route("/health", get(health_check_handler))
         .route("/status", get(status_check_handler))

@@ -43,6 +43,9 @@ pub struct Execution {
     pub error_message: Option<String>,
     pub executed_at: DateTime<Utc>,
     pub chain: String,
+    pub nexus_attestation_id: Option<String>,
+    pub nexus_verified: bool,
+    pub nexus_submitted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +61,9 @@ pub struct ExecutionRecord {
     pub payment_number: i64,
     pub chain: String,
     pub executed_at: DateTime<Utc>,
+    pub nexus_attestation_id: Option<String>,
+    pub nexus_verified: bool,
+    pub nexus_submitted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -90,6 +96,26 @@ pub struct SyncMetadata {
     pub last_synced_block: i64,
     pub last_synced_at: DateTime<Utc>,
     pub sync_method: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct PendingNexusAttestation {
+    pub id: i64,
+    pub subscription_id: String,
+    pub transaction_hash: String,
+    pub nexus_attestation_id: String,
+    pub chain: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct CrossChainVerificationRecord {
+    pub id: i64,
+    pub subscription_id: String,
+    pub source_chain_id: i32,
+    pub query_chain_id: i32,
+    pub attestation_id: Option<String>,
+    pub verified: bool,
+    pub queried_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
