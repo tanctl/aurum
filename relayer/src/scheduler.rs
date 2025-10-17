@@ -3,12 +3,15 @@ use crate::blockchain::BlockchainClient;
 use crate::database::models::{ExecutionRecord, IntentCache, Subscription, SubscriptionStatus};
 use crate::database::queries::Queries;
 use crate::error::{RelayerError, Result};
+use crate::integrations::hypersync::HyperSyncClient;
+use crate::metrics::Metrics;
+use crate::Config;
 use chrono::Utc;
 use ethers::types::{H256, U256};
 use serde_json::to_value;
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::{debug, error, info, warn};
 
@@ -80,6 +83,9 @@ pub struct Scheduler {
     queries: Arc<Queries>,
     blockchain_client: Arc<BlockchainClient>,
     avail_client: Arc<AvailClient>,
+    hypersync_client: Option<Arc<HyperSyncClient>>,
+    metrics: Arc<Metrics>,
+    config: Config,
     job_scheduler: JobScheduler,
     pool: PgPool, // for distributed locking
 }
@@ -89,6 +95,9 @@ impl Scheduler {
         queries: Arc<Queries>,
         blockchain_client: Arc<BlockchainClient>,
         avail_client: Arc<AvailClient>,
+        hypersync_client: Option<Arc<HyperSyncClient>>,
+        metrics: Arc<Metrics>,
+        config: Config,
         pool: PgPool,
     ) -> Result<Self> {
         info!("initializing payment scheduler");
@@ -101,14 +110,48 @@ impl Scheduler {
             queries,
             blockchain_client,
             avail_client,
+            hypersync_client,
+            metrics,
+            config,
             job_scheduler,
             pool,
         };
 
+        scheduler.run_initial_historical_sync().await;
         scheduler.setup_payment_job().await?;
 
         info!("payment scheduler initialized successfully");
         Ok(scheduler)
+    }
+
+    async fn run_initial_historical_sync(&self) {
+        if let Some(hypersync) = &self.hypersync_client {
+            info!("Syncing historical data via HyperSync...");
+            let start = Instant::now();
+
+            match hypersync
+                .sync_historical_data(
+                    &self.config,
+                    Arc::clone(&self.queries),
+                    Arc::clone(&self.blockchain_client),
+                )
+                .await
+            {
+                Ok(_) => {
+                    let elapsed = start.elapsed();
+                    self.metrics.record_hypersync_query(elapsed);
+                    info!(
+                        "Historical sync complete in {} ms (records may have been updated)",
+                        elapsed.as_millis()
+                    );
+                }
+                Err(err) => {
+                    error!("HyperSync historical sync failed: {}", err);
+                }
+            }
+        } else {
+            info!("HyperSync client not configured; skipping historical sync");
+        }
     }
 
     async fn setup_payment_job(&mut self) -> Result<()> {

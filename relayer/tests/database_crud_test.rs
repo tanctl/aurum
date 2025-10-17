@@ -189,10 +189,7 @@ async fn test_queries_against_postgres() {
     assert!(nonce_used);
 
     let intent = sample_intent(&subscription);
-    let intent_id = queries
-        .cache_intent(&intent)
-        .await
-        .expect("cache intent");
+    let intent_id = queries.cache_intent(&intent).await.expect("cache intent");
     assert!(intent_id > 0);
 
     let cached_intent = queries

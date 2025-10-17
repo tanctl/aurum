@@ -3,7 +3,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use relayer::api::types::*;
-use relayer::{AppState, AvailClient, BlockchainClient, Config, Database, EnvioClient};
+use relayer::{AppState, AvailClient, BlockchainClient, Config, Database, EnvioClient, Metrics};
 use std::sync::Arc;
 use tower::util::ServiceExt;
 
@@ -33,6 +33,8 @@ async fn create_test_app_state() -> Arc<AppState> {
         avail_secret_uri: None,
         envio_graphql_endpoint: None,
         envio_explorer_url: None,
+        hypersync_url_sepolia: None,
+        hypersync_url_base: None,
     };
 
     let database = Database::new(&config.database_url)
@@ -61,7 +63,19 @@ async fn create_test_app_state() -> Arc<AppState> {
         blockchain_client,
         avail_client,
         envio_client,
+        hypersync_client: None,
+        metrics: Arc::new(Metrics::new()),
     })
+}
+
+#[test]
+fn metrics_snapshot_defaults() {
+    let metrics = Metrics::new();
+    let snapshot = metrics.snapshot();
+    assert_eq!(snapshot.hypersync_queries, 0);
+    assert_eq!(snapshot.envio_queries, 0);
+    assert!(snapshot.hypersync_average_ms.abs() < f64::EPSILON);
+    assert!(snapshot.envio_average_ms.abs() < f64::EPSILON);
 }
 
 // helper function to create test subscription intent

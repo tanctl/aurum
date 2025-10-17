@@ -1,4 +1,6 @@
-use relayer::{AvailClient, BlockchainClient, Config, Database, Scheduler};
+use relayer::{
+    AvailClient, BlockchainClient, Config, Database, HyperSyncClient, Metrics, Scheduler,
+};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -15,8 +17,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let blockchain_client = Arc::new(BlockchainClient::new(&config).await?);
     let avail_client = Arc::new(AvailClient::new(&config).await?);
+    let metrics = Arc::new(Metrics::new());
 
-    let mut scheduler = Scheduler::new(queries, blockchain_client, avail_client, pool).await?;
+    let hypersync_client = if let Some((sepolia_url, base_url)) = config.hypersync_urls() {
+        match HyperSyncClient::new(sepolia_url.to_string(), base_url.to_string()) {
+            Ok(client) => Some(Arc::new(client)),
+            Err(err) => {
+                eprintln!("failed to initialise HyperSync client: {err}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let mut scheduler = Scheduler::new(
+        Arc::clone(&queries),
+        Arc::clone(&blockchain_client),
+        Arc::clone(&avail_client),
+        hypersync_client,
+        metrics,
+        config.clone(),
+        pool.clone(),
+    )
+    .await?;
 
     println!("starting payment scheduler...");
     scheduler.start().await?;

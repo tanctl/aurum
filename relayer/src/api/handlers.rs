@@ -7,11 +7,14 @@ use ethers::types::{Address, U256};
 use serde::Deserialize;
 use std::str::FromStr;
 use std::sync::Arc;
-use tracing::{debug, info};
+use std::time::Instant;
+use tracing::{debug, info, warn};
 
 use super::types::*;
 use super::validation::ValidationService;
 use crate::database::models::{IntentCache, Subscription};
+use crate::integrations::hypersync::{HyperSyncClient, RawPaymentEvent};
+use crate::metrics::MetricsSnapshot;
 use crate::{AppState, RelayerError, Result};
 
 // post /api/v1/intent
@@ -257,6 +260,14 @@ pub async fn get_subscription_handler(
 pub struct TransactionQueryParams {
     page: Option<u32>,
     size: Option<u32>,
+    #[serde(default)]
+    use_hypersync: Option<bool>,
+    #[serde(default)]
+    from_block: Option<u64>,
+    #[serde(default)]
+    to_block: Option<u64>,
+    #[serde(default)]
+    chain: Option<String>,
 }
 
 // get /api/v1/merchant/:address/transactions
@@ -271,11 +282,171 @@ pub async fn get_merchant_transactions_handler(
 
     let page = params.page.unwrap_or(0);
     let page_size = params.size.unwrap_or(50).min(100);
+    let use_hypersync = params.use_hypersync.unwrap_or(false);
+    let chain_name = params.chain.as_deref().unwrap_or("sepolia");
 
+    if use_hypersync {
+        let chain_id = app_state.blockchain_client.chain_id(chain_name)?;
+        let contract_address = app_state
+            .config
+            .subscription_manager_address_for_chain(chain_name)?
+            .to_string();
+
+        let current_block = app_state
+            .blockchain_client
+            .get_current_block_number(chain_name)
+            .await?;
+
+        let to_block = params.to_block.unwrap_or(current_block);
+        let default_window = 100_000u64;
+        let from_block = params
+            .from_block
+            .unwrap_or_else(|| to_block.saturating_sub(default_window));
+
+        if from_block > to_block {
+            return Err(RelayerError::Validation(
+                "from_block cannot be greater than to_block".to_string(),
+            ));
+        }
+
+        let merchant_lower = merchant_address.to_lowercase();
+        let start_timer = Instant::now();
+
+        let hyper_result: Result<(Vec<RawPaymentEvent>, &'static str)> =
+            if let Some(hypersync) = app_state.hypersync_client.as_ref() {
+                match hypersync
+                    .get_historical_payments(chain_id, &contract_address, from_block, to_block)
+                    .await
+                {
+                    Ok(events) => Ok((events, "hypersync")),
+                    Err(err) => {
+                        warn!(
+                            "HyperSync query failed for merchant {} on {}: {}; falling back to RPC",
+                            merchant_address, chain_name, err
+                        );
+                        HyperSyncClient::fetch_payments_via_rpc_static(
+                            &app_state.blockchain_client,
+                            chain_name,
+                            chain_id,
+                            &contract_address,
+                            from_block,
+                            to_block,
+                        )
+                        .await
+                        .map(|events| (events, "rpc"))
+                    }
+                }
+            } else {
+                warn!(
+                    "HyperSync client not configured; using RPC fallback for merchant {}",
+                    merchant_address
+                );
+                HyperSyncClient::fetch_payments_via_rpc_static(
+                    &app_state.blockchain_client,
+                    chain_name,
+                    chain_id,
+                    &contract_address,
+                    from_block,
+                    to_block,
+                )
+                .await
+                .map(|events| (events, "rpc"))
+            };
+
+        match hyper_result {
+            Ok((events, data_source)) => {
+                let mut total_revenue = U256::zero();
+                let mut transactions: Vec<TransactionData> = Vec::new();
+
+                for event in events
+                    .into_iter()
+                    .filter(|event| event.merchant == merchant_lower)
+                {
+                    total_revenue = total_revenue.checked_add(event.amount).unwrap_or(U256::MAX);
+
+                    let timestamp = match app_state
+                        .blockchain_client
+                        .get_block_timestamp(chain_name, event.block_number)
+                        .await
+                    {
+                        Ok(value) => value,
+                        Err(err) => {
+                            warn!(
+                                "failed to fetch timestamp for block {} on {}: {}",
+                                event.block_number, chain_name, err
+                            );
+                            continue;
+                        }
+                    };
+
+                    transactions.push(TransactionData {
+                        subscription_id: event.subscription_id.clone(),
+                        subscriber: event.subscriber.clone(),
+                        merchant: event.merchant.clone(),
+                        payment_number: event.payment_number,
+                        amount: event.amount.to_string(),
+                        fee: event.fee.to_string(),
+                        relayer: event.relayer.clone(),
+                        transaction_hash: event.transaction_hash.clone(),
+                        block_number: event.block_number,
+                        timestamp,
+                        chain: chain_name.to_string(),
+                    });
+                }
+
+                let total_count = transactions.len();
+                let start_index = (page as usize).saturating_mul(page_size as usize);
+                let end_index = (start_index + page_size as usize).min(total_count);
+                let has_more = end_index < total_count;
+                let paginated = if start_index < total_count {
+                    transactions[start_index..end_index].to_vec()
+                } else {
+                    Vec::new()
+                };
+
+                app_state
+                    .metrics
+                    .record_hypersync_query(start_timer.elapsed());
+
+                let explorer_url = app_state
+                    .envio_client
+                    .build_explorer_url("merchants", &merchant_lower)
+                    .unwrap_or_else(|| "https://explorer.envio.dev".to_string());
+
+                let response = MerchantTransactionsResponse {
+                    transactions: paginated,
+                    count: total_count as u64,
+                    total_revenue: total_revenue.to_string(),
+                    envio_explorer_url: explorer_url,
+                    page,
+                    has_more,
+                    data_source: data_source.to_string(),
+                };
+
+                info!(
+                    "successfully fetched {} transactions for merchant {} via {}",
+                    response.transactions.len(),
+                    merchant_address,
+                    response.data_source
+                );
+
+                return Ok(Json(response));
+            }
+            Err(err) => {
+                warn!(
+                    "failed to fetch merchant transactions via HyperSync/RPC fallback for {}: {}; using Envio",
+                    merchant_address, err
+                );
+            }
+        }
+    }
+
+    let start_timer = Instant::now();
     let envio_result = app_state
         .envio_client
         .get_merchant_transactions(&merchant_address, page, page_size)
         .await?;
+    app_state.metrics.record_envio_query(start_timer.elapsed());
 
     let response = MerchantTransactionsResponse {
         transactions: envio_result.transactions,
@@ -286,10 +457,11 @@ pub async fn get_merchant_transactions_handler(
             .unwrap_or_else(|| "https://explorer.envio.dev".to_string()),
         page,
         has_more: envio_result.has_more,
+        data_source: "envio".to_string(),
     };
 
     info!(
-        "successfully fetched {} transactions for merchant {}",
+        "successfully fetched {} transactions for merchant {} via envio",
         response.transactions.len(),
         merchant_address
     );
@@ -488,6 +660,13 @@ pub async fn status_check_handler(
     });
 
     Ok(Json(status_response))
+}
+
+pub async fn metrics_handler(
+    State(app_state): State<Arc<AppState>>,
+) -> Result<Json<MetricsSnapshot>> {
+    let snapshot = app_state.metrics.snapshot();
+    Ok(Json(snapshot))
 }
 
 fn calculate_average_transaction_value(total_revenue: &str, total_payments: i64) -> String {

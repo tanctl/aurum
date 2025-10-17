@@ -1,10 +1,11 @@
 use super::contract_bindings::{MockPYUSD, SubscriptionManager};
 use crate::config::Config;
 use crate::error::{RelayerError, Result};
+use chrono::Utc;
 use ethers::prelude::*;
 use ethers::providers::{Http, Middleware, Provider};
 use ethers::signers::{LocalWallet, Signer};
-use ethers::types::{Address, TransactionReceipt, H256, U256};
+use ethers::types::{Address, Filter, Log as EthersLog, TransactionReceipt, H256, U256};
 use std::sync::Arc;
 use tracing::{info, warn};
 
@@ -178,6 +179,18 @@ impl BlockchainClient {
         }
     }
 
+    pub async fn get_block_timestamp(&self, chain: &str, block_number: u64) -> Result<u64> {
+        if let Some(real) = &self.real {
+            real.get_block_timestamp(chain, block_number).await
+        } else if let Some(stub) = &self.stub {
+            stub.get_block_timestamp(chain, block_number).await
+        } else {
+            Err(RelayerError::InternalError(
+                "blockchain client not initialised".to_string(),
+            ))
+        }
+    }
+
     pub async fn validate_connection(&self, chain: &str) -> Result<()> {
         if let Some(real) = &self.real {
             real.validate_connection(chain).await
@@ -229,6 +242,18 @@ impl BlockchainClient {
         } else if let Some(stub) = &self.stub {
             stub.validate_subscription_state(subscription_id, chain)
                 .await
+        } else {
+            Err(RelayerError::InternalError(
+                "blockchain client not initialised".to_string(),
+            ))
+        }
+    }
+
+    pub async fn fetch_logs(&self, chain: &str, filter: Filter) -> Result<Vec<EthersLog>> {
+        if let Some(real) = &self.real {
+            real.fetch_logs(chain, filter).await
+        } else if let Some(stub) = &self.stub {
+            stub.fetch_logs(chain, filter).await
         } else {
             Err(RelayerError::InternalError(
                 "blockchain client not initialised".to_string(),
@@ -590,6 +615,13 @@ impl RealBlockchainClient {
         Ok(receipt)
     }
 
+    async fn fetch_logs(&self, chain: &str, filter: Filter) -> Result<Vec<EthersLog>> {
+        let (provider, _, _) = self.get_provider_and_contracts(chain)?;
+        provider.get_logs(&filter).await.map_err(|e| {
+            RelayerError::RpcConnectionFailed(format!("failed to fetch logs on {}: {}", chain, e))
+        })
+    }
+
     async fn get_current_block_number(&self, chain: &str) -> Result<u64> {
         info!("fetching current block number for chain {}", chain);
 
@@ -601,6 +633,32 @@ impl RealBlockchainClient {
 
         info!("current block number on {}: {}", chain, block_number);
         Ok(block_number.as_u64())
+    }
+
+    async fn get_block_timestamp(&self, chain: &str, block_number: u64) -> Result<u64> {
+        info!(
+            "fetching block timestamp for chain {} block {}",
+            chain, block_number
+        );
+
+        let (provider, _, _) = self.get_provider_and_contracts(chain)?;
+        let block = provider
+            .get_block(block_number)
+            .await
+            .map_err(|e| {
+                RelayerError::RpcConnectionFailed(format!(
+                    "failed to fetch block {} on {}: {}",
+                    block_number, chain, e
+                ))
+            })?
+            .ok_or_else(|| {
+                RelayerError::NotFound(format!(
+                    "block {} not found on chain {}",
+                    block_number, chain
+                ))
+            })?;
+
+        Ok(block.timestamp.as_u64())
     }
 
     async fn validate_connection(&self, chain: &str) -> Result<()> {
@@ -750,6 +808,15 @@ impl StubBlockchainClient {
         Ok(None)
     }
 
+    async fn fetch_logs(&self, chain: &str, _filter: Filter) -> Result<Vec<EthersLog>> {
+        let normalized = Self::normalize_chain(chain)?;
+        info!(
+            "stub blockchain client returning empty log set for {}",
+            normalized
+        );
+        Ok(Vec::new())
+    }
+
     async fn check_allowance(
         &self,
         _subscriber: Address,
@@ -825,6 +892,15 @@ impl StubBlockchainClient {
             block_number, normalized
         );
         Ok(block_number)
+    }
+
+    async fn get_block_timestamp(&self, chain: &str, _block_number: u64) -> Result<u64> {
+        let normalized = Self::normalize_chain(chain)?;
+        info!(
+            "stub blockchain client providing synthetic timestamp for {}",
+            normalized
+        );
+        Ok(Utc::now().timestamp() as u64)
     }
 
     async fn validate_connection(&self, chain: &str) -> Result<()> {

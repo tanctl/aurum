@@ -24,6 +24,8 @@ pub struct Config {
     pub avail_application_id: Option<u32>,
     pub avail_auth_token: Option<String>,
     pub avail_secret_uri: Option<String>,
+    pub hypersync_url_sepolia: Option<String>,
+    pub hypersync_url_base: Option<String>,
 }
 
 impl Config {
@@ -82,6 +84,8 @@ impl Config {
                 .transpose()?,
             avail_auth_token: env::var("AVAIL_AUTH_TOKEN").ok(),
             avail_secret_uri: env::var("AVAIL_SECRET_URI").ok(),
+            hypersync_url_sepolia: env::var("HYPERSYNC_URL_SEPOLIA").ok(),
+            hypersync_url_base: env::var("HYPERSYNC_URL_BASE").ok(),
         };
 
         // validate eth addresses
@@ -176,6 +180,23 @@ impl Config {
             ));
         }
 
+        let hypersync_sepolia_provided = self
+            .hypersync_url_sepolia
+            .as_ref()
+            .map(|url| !url.trim().is_empty())
+            .unwrap_or(false);
+        let hypersync_base_provided = self
+            .hypersync_url_base
+            .as_ref()
+            .map(|url| !url.trim().is_empty())
+            .unwrap_or(false);
+
+        if hypersync_sepolia_provided ^ hypersync_base_provided {
+            return Err(anyhow::anyhow!(
+                "both HYPERSYNC_URL_SEPOLIA and HYPERSYNC_URL_BASE must be provided together"
+            ));
+        }
+
         let envio_graphql_provided = self
             .envio_graphql_endpoint
             .as_ref()
@@ -243,5 +264,28 @@ impl Config {
                 .as_ref()
                 .map(|url| !url.trim().is_empty())
                 .unwrap_or(false)
+    }
+
+    pub fn hypersync_enabled(&self) -> bool {
+        self.hypersync_url_sepolia
+            .as_ref()
+            .map(|url| !url.trim().is_empty())
+            .unwrap_or(false)
+            && self
+                .hypersync_url_base
+                .as_ref()
+                .map(|url| !url.trim().is_empty())
+                .unwrap_or(false)
+    }
+
+    pub fn hypersync_urls(&self) -> Option<(&str, &str)> {
+        match (&self.hypersync_url_sepolia, &self.hypersync_url_base) {
+            (Some(sepolia), Some(base))
+                if !sepolia.trim().is_empty() && !base.trim().is_empty() =>
+            {
+                Some((sepolia.as_str(), base.as_str()))
+            }
+            _ => None,
+        }
     }
 }

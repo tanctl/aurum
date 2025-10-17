@@ -1,3 +1,4 @@
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -42,6 +43,10 @@ fn hex_private_key(wallet: &LocalWallet) -> String {
 async fn test_blockchain_client_with_anvil() {
     if which::which("anvil").is_err() {
         eprintln!("skipping anvil integration test because anvil binary is missing");
+        return;
+    }
+    if TcpListener::bind("127.0.0.1:0").is_err() {
+        eprintln!("skipping anvil integration test because local port binding is not permitted");
         return;
     }
 

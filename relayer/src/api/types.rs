@@ -133,6 +133,8 @@ pub struct MerchantTransactionsResponse {
     pub page: u32,
     #[serde(rename = "hasMore")]
     pub has_more: bool,
+    #[serde(rename = "dataSource")]
+    pub data_source: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

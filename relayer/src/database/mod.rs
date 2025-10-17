@@ -3,7 +3,7 @@ pub mod queries;
 
 use crate::database::queries::Queries;
 use anyhow::Result;
-use models::{Execution, ExecutionRecord, IntentCache, Subscription};
+use models::{Execution, ExecutionRecord, IntentCache, Subscription, SyncMetadata};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{
     collections::HashMap,
@@ -21,6 +21,7 @@ pub(crate) struct StubStorage {
     pub executions: Mutex<Vec<Execution>>,
     pub execution_records: Mutex<Vec<ExecutionRecord>>,
     pub intent_cache: Mutex<Vec<IntentCache>>,
+    pub sync_metadata: Mutex<HashMap<i64, SyncMetadata>>,
     next_intent_id: AtomicI64,
     next_execution_id: AtomicI64,
 }

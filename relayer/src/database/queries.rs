@@ -1,7 +1,9 @@
 #![allow(clippy::needless_borrows_for_generic_args)]
 
 use super::{
-    models::{Execution, ExecutionRecord, IntentCache, Subscription, SubscriptionStatus},
+    models::{
+        Execution, ExecutionRecord, IntentCache, Subscription, SubscriptionStatus, SyncMetadata,
+    },
     StubStorage,
 };
 use crate::error::{RelayerError, Result};
@@ -1699,5 +1701,171 @@ impl Queries {
             subscription_id
         );
         Ok(())
+    }
+
+    pub async fn get_sync_metadata(&self, chain_id: i64) -> Result<SyncMetadata> {
+        if let Some(storage) = self.stub_storage() {
+            let mut metadata = storage.sync_metadata.lock().unwrap();
+            let entry = metadata.entry(chain_id).or_insert_with(|| SyncMetadata {
+                id: chain_id,
+                chain_id,
+                last_synced_block: 0,
+                last_synced_at: Utc::now(),
+                sync_method: Some("hypersync".to_string()),
+            });
+            return Ok(entry.clone());
+        }
+
+        let pool = self.require_postgres("get_sync_metadata")?;
+
+        if let Some(metadata) = sqlx::query_as::<_, SyncMetadata>(
+            r#"
+            SELECT id, chain_id, last_synced_block, last_synced_at, sync_method
+            FROM sync_metadata
+            WHERE chain_id = $1
+            "#,
+        )
+        .bind(chain_id)
+        .fetch_optional(pool)
+        .await?
+        {
+            return Ok(metadata);
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO sync_metadata (chain_id, last_synced_block, last_synced_at)
+            VALUES ($1, 0, NOW())
+            ON CONFLICT (chain_id) DO NOTHING
+            "#,
+        )
+        .bind(chain_id)
+        .execute(pool)
+        .await?;
+
+        let metadata = sqlx::query_as::<_, SyncMetadata>(
+            r#"
+            SELECT id, chain_id, last_synced_block, last_synced_at, sync_method
+            FROM sync_metadata
+            WHERE chain_id = $1
+            "#,
+        )
+        .bind(chain_id)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(metadata)
+    }
+
+    pub async fn update_sync_metadata(&self, chain_id: i64, last_synced_block: i64) -> Result<()> {
+        if let Some(storage) = self.stub_storage() {
+            let mut metadata = storage.sync_metadata.lock().unwrap();
+            let entry = metadata.entry(chain_id).or_insert_with(|| SyncMetadata {
+                id: chain_id,
+                chain_id,
+                last_synced_block: 0,
+                last_synced_at: Utc::now(),
+                sync_method: Some("hypersync".to_string()),
+            });
+            entry.last_synced_block = last_synced_block;
+            entry.last_synced_at = Utc::now();
+            return Ok(());
+        }
+
+        let pool = self.require_postgres("update_sync_metadata")?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO sync_metadata (chain_id, last_synced_block, last_synced_at)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (chain_id) DO UPDATE
+            SET last_synced_block = EXCLUDED.last_synced_block,
+                last_synced_at = NOW()
+            "#,
+        )
+        .bind(chain_id)
+        .bind(last_synced_block)
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn insert_execution_from_hypersync(
+        &self,
+        subscription_id: &str,
+        relayer_address: &str,
+        payment_number: i64,
+        amount_paid: &str,
+        protocol_fee: &str,
+        merchant_amount: &str,
+        transaction_hash: &str,
+        block_number: i64,
+        executed_at: DateTime<Utc>,
+        chain: &str,
+    ) -> Result<bool> {
+        if let Some(storage) = self.stub_storage() {
+            let mut records = storage.execution_records.lock().unwrap();
+            let record = ExecutionRecord {
+                id: storage.next_execution_id(),
+                subscription_id: subscription_id.to_string(),
+                transaction_hash: transaction_hash.to_string(),
+                block_number,
+                gas_used: "0".to_string(),
+                gas_price: "0".to_string(),
+                fee_paid: protocol_fee.to_string(),
+                payment_amount: amount_paid.to_string(),
+                payment_number,
+                chain: chain.to_string(),
+                executed_at,
+            };
+            let existing = records
+                .iter()
+                .any(|existing| existing.transaction_hash == record.transaction_hash);
+            if !existing {
+                records.push(record);
+                return Ok(true);
+            }
+            return Ok(false);
+        }
+
+        let pool = self.require_postgres("insert_execution_from_hypersync")?;
+
+        let result = sqlx::query(
+            r#"
+            INSERT INTO executions (
+                subscription_id,
+                relayer_address,
+                payment_number,
+                amount_paid,
+                protocol_fee,
+                merchant_amount,
+                transaction_hash,
+                block_number,
+                gas_used,
+                gas_price,
+                status,
+                executed_at,
+                chain
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '0', '0', 'SUCCESS', $9, $10)
+            ON CONFLICT (transaction_hash) DO NOTHING
+            "#,
+        )
+        .bind(subscription_id)
+        .bind(relayer_address)
+        .bind(payment_number)
+        .bind(amount_paid)
+        .bind(protocol_fee)
+        .bind(merchant_amount)
+        .bind(transaction_hash)
+        .bind(block_number)
+        .bind(executed_at)
+        .bind(chain)
+        .execute(pool)
+        .await?;
+
+        Ok(result.rows_affected() > 0)
     }
 }

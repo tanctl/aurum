@@ -7,7 +7,10 @@ use tracing::{error, info, Level};
 use tracing_subscriber;
 
 use relayer::api::ApiServer;
-use relayer::{AppState, AvailClient, BlockchainClient, Config, Database, EnvioClient, Scheduler};
+use relayer::{
+    AppState, AvailClient, BlockchainClient, Config, Database, EnvioClient, HyperSyncClient,
+    Metrics, Scheduler,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -72,6 +75,24 @@ async fn main() -> Result<()> {
         e
     })?;
 
+    let metrics = Arc::new(Metrics::new());
+
+    let hypersync_client = if let Some((sepolia_url, base_url)) = config.hypersync_urls() {
+        match HyperSyncClient::new(sepolia_url.to_string(), base_url.to_string()) {
+            Ok(client) => {
+                info!("hypersync client configured for accelerated historical sync");
+                Some(Arc::new(client))
+            }
+            Err(err) => {
+                error!("failed to initialise hypersync client: {}", err);
+                None
+            }
+        }
+    } else {
+        info!("hypersync configuration not provided; running without accelerated sync");
+        None
+    };
+
     let envio_client = match (&config.envio_graphql_endpoint, &config.envio_explorer_url) {
         (Some(graphql_endpoint), Some(explorer_url)) if !graphql_endpoint.trim().is_empty() => {
             match EnvioClient::new(graphql_endpoint.clone(), explorer_url.clone()) {
@@ -97,6 +118,8 @@ async fn main() -> Result<()> {
         blockchain_client,
         avail_client: avail_client.clone(),
         envio_client,
+        hypersync_client: hypersync_client.clone(),
+        metrics: metrics.clone(),
     });
 
     info!("relayer service initialized successfully");
@@ -106,6 +129,9 @@ async fn main() -> Result<()> {
         Arc::new(app_state.database.queries().clone()),
         Arc::new(app_state.blockchain_client.clone()),
         Arc::new(app_state.avail_client.clone()),
+        app_state.hypersync_client.clone(),
+        metrics.clone(),
+        config.clone(),
         app_state.database.expect_pool().clone(),
     )
     .await

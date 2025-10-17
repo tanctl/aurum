@@ -22,6 +22,7 @@ pub fn create_api_routes(app_state: Arc<AppState>) -> Router {
         // health and status routes
         .route("/health", get(health_check_handler))
         .route("/status", get(status_check_handler))
+        .route("/metrics", get(metrics_handler))
         // docs routes (optional)
         .route("/api/v1/docs", get(api_documentation_handler))
         .with_state(app_state)
@@ -86,6 +87,7 @@ pub async fn api_documentation_handler() -> axum::response::Html<&'static str> {
                 <div class="example">
                     <strong>Query Parameters:</strong><br>
                     <code>?page=0&size=50</code>
+                    <br><em>Optional:</em> <code>use_hypersync=true&from_block=1000&to_block=2000&chain=base</code>
                 </div>
             </div>
             

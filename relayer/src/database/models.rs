@@ -83,6 +83,15 @@ pub struct IntentCache {
     pub avail_extrinsic_index: Option<i64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct SyncMetadata {
+    pub id: i64,
+    pub chain_id: i64,
+    pub last_synced_block: i64,
+    pub last_synced_at: DateTime<Utc>,
+    pub sync_method: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SubscriptionStatus {
     Active,
