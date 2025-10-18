@@ -1561,6 +1561,7 @@ async fn build_payment_attestation(
 ) -> Result<PaymentAttestation> {
     let subscription_bytes = subscription_id_to_bytes(&subscription.id)?;
     let merchant_bytes = address_to_bytes20(&subscription.merchant)?;
+    // embeds the erc20 address into the attestation so nexus can verify the payment token
     let token_bytes = address_to_bytes20(&subscription.token_address)?;
     let tx_hash_bytes = execution_result.transaction_hash.as_bytes();
     let mut tx_hash = [0u8; 32];

@@ -4,6 +4,7 @@ type Subscription @entity {
   subscriber: Bytes!
   merchant: Bytes!
   token: Bytes!
+  tokenSymbol: String!
   amount: BigInt!
   interval: BigInt!
   startTime: BigInt!
@@ -26,6 +27,9 @@ type Payment @entity {
   fee: BigInt!
   relayer: Bytes!
   token: Bytes!
+  tokenSymbol: String!
+  nexusAttestationId: String
+  nexusVerified: Boolean!
   txHash: Bytes!
   blockNumber: BigInt!
   timestamp: BigInt!
@@ -42,6 +46,18 @@ type MerchantStats @entity {
   chainId: Int!
 }
 
+type MerchantTokenStats @entity {
+  id: ID!
+  merchant: Bytes!
+  token: Bytes!
+  tokenSymbol: String!
+  totalSubscriptions: Int!
+  activeSubscriptions: Int!
+  totalRevenue: BigInt!
+  totalPayments: Int!
+  chainId: Int!
+}
+
 type RelayerStats @entity {
   id: ID!
   relayer: Bytes!
@@ -51,4 +67,19 @@ type RelayerStats @entity {
   isActive: Boolean!
   stakedAmount: BigInt!
   chainId: Int!
+}
+
+type CrossChainAttestation @entity {
+  id: ID!
+  subscriptionId: Bytes!
+  paymentNumber: Int!
+  sourceChainId: Int!
+  token: Bytes!
+  amount: BigInt!
+  merchant: Bytes!
+  txHash: Bytes!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  verified: Boolean!
+  createdAt: BigInt!
 }

@@ -51,6 +51,12 @@ pub struct PaymentEvent {
     pub subscriber: Option<String>,
     #[serde(default)]
     pub token: Option<String>,
+    #[serde(rename = "tokenSymbol", default)]
+    pub token_symbol: Option<String>,
+    #[serde(rename = "nexusAttestationId")]
+    pub nexus_attestation_id: Option<String>,
+    #[serde(rename = "nexusVerified", default)]
+    pub nexus_verified: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -84,11 +90,16 @@ pub struct SubscriptionData {
     pub chain_id: i64,
     #[serde(default)]
     pub token: String,
+    #[serde(rename = "tokenSymbol", default)]
+    pub token_symbol: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
-pub struct MerchantStatsData {
+pub struct MerchantTokenStatsRow {
     pub merchant: String,
+    pub token: String,
+    #[serde(rename = "tokenSymbol")]
+    pub token_symbol: String,
     #[serde(rename = "totalSubscriptions", deserialize_with = "deserialize_i64")]
     pub total_subscriptions: i64,
     #[serde(rename = "activeSubscriptions", deserialize_with = "deserialize_i64")]
@@ -99,6 +110,25 @@ pub struct MerchantStatsData {
     pub total_payments: i64,
     #[serde(rename = "chainId", deserialize_with = "deserialize_i64")]
     pub chain_id: i64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TokenStats {
+    pub token_address: String,
+    pub token_symbol: String,
+    pub total_subscriptions: u64,
+    pub active_subscriptions: u64,
+    pub total_revenue: String,
+    pub total_payments: u64,
+    pub average_transaction_value: String,
+    pub chain_id: i64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MerchantStatsData {
+    pub merchant: String,
+    pub total: TokenStats,
+    pub by_token: HashMap<String, TokenStats>,
 }
 
 #[derive(Debug, Clone)]
@@ -170,10 +200,14 @@ impl EnvioClient {
         merchant_address: &str,
     ) -> Result<Option<MerchantStatsData>> {
         match &self.mode {
-            EnvioClientMode::Stub => Ok(Some(MerchantStatsData {
-                merchant: merchant_address.to_lowercase(),
-                ..MerchantStatsData::default()
-            })),
+            EnvioClientMode::Stub => {
+                let mut stats = MerchantStatsData::default();
+                stats.merchant = merchant_address.to_lowercase();
+                stats.total.token_address = "aggregate".to_string();
+                stats.total.token_symbol = "TOTAL".to_string();
+                stats.total.total_revenue = "0".to_string();
+                Ok(Some(stats))
+            }
             EnvioClientMode::Remote(remote) => remote.get_merchant_stats(merchant_address).await,
         }
     }
@@ -192,6 +226,33 @@ impl EnvioClient {
         match &self.mode {
             EnvioClientMode::Stub => Ok(Vec::new()),
             EnvioClientMode::Remote(remote) => remote.get_payment_history(subscription_id).await,
+        }
+    }
+
+    pub async fn get_cross_chain_attestations(
+        &self,
+        subscription_id: &str,
+    ) -> Result<Vec<CrossChainAttestationData>> {
+        match &self.mode {
+            EnvioClientMode::Stub => Ok(Vec::new()),
+            EnvioClientMode::Remote(remote) => {
+                remote.get_cross_chain_attestations(subscription_id).await
+            }
+        }
+    }
+
+    pub async fn get_payment_with_attestation(
+        &self,
+        subscription_id: &str,
+        payment_number: u32,
+    ) -> Result<Option<PaymentEvent>> {
+        match &self.mode {
+            EnvioClientMode::Stub => Ok(None),
+            EnvioClientMode::Remote(remote) => {
+                remote
+                    .get_payment_with_attestation(subscription_id, payment_number)
+                    .await
+            }
         }
     }
 
@@ -264,6 +325,9 @@ impl RemoteEnvioClient {
                 merchant
                 subscriber
                 token
+                tokenSymbol
+                nexusAttestationId
+                nexusVerified
             }
             Payment_aggregate(where: { merchant: { _eq: $merchant } }) {
                 aggregate {
@@ -353,12 +417,13 @@ impl RemoteEnvioClient {
         merchant_address: &str,
     ) -> Result<Option<MerchantStatsData>> {
         let query = r#"
-        query MerchantStats($merchant: String!) {
-            MerchantStats(
+        query MerchantTokenStats($merchant: String!) {
+            MerchantTokenStats(
                 where: { merchant: { _eq: $merchant } }
-                limit: 1
             ) {
                 merchant
+                token
+                tokenSymbol
                 totalSubscriptions
                 activeSubscriptions
                 totalRevenue
@@ -368,18 +433,76 @@ impl RemoteEnvioClient {
         }
         "#;
 
+        let merchant_lower = merchant_address.to_lowercase();
         let variables = json!({
-            "merchant": merchant_address.to_lowercase(),
+            "merchant": merchant_lower,
         });
 
-        let response: GraphQlResponse<MerchantStatsPayload> =
+        let response: GraphQlResponse<MerchantTokenStatsPayload> =
             self.execute_query(query, variables).await?;
 
-        let stats = response
+        let rows = response
             .data
-            .and_then(|payload| payload.merchant_stats.into_iter().next());
+            .map(|payload| payload.merchant_token_stats)
+            .unwrap_or_default();
 
-        Ok(stats)
+        if rows.is_empty() {
+            return Ok(None);
+        }
+
+        let mut stats = MerchantStatsData::default();
+        stats.merchant = merchant_lower;
+
+        let mut totals_subscriptions: u64 = 0;
+        let mut totals_active: u64 = 0;
+        let mut totals_payments: u64 = 0;
+        let mut totals_revenue = U256::zero();
+
+        for row in rows {
+            let token_address = tokens::normalize_token_address(&row.token);
+            let total_subscriptions = row.total_subscriptions.max(0) as u64;
+            let active_subscriptions = row.active_subscriptions.max(0) as u64;
+            let total_payments = row.total_payments.max(0) as u64;
+            let revenue_u256 =
+                U256::from_dec_str(&row.total_revenue).unwrap_or_else(|_| U256::zero());
+
+            totals_subscriptions = totals_subscriptions.saturating_add(total_subscriptions);
+            totals_active = totals_active.saturating_add(active_subscriptions);
+            totals_payments = totals_payments.saturating_add(total_payments);
+            totals_revenue = totals_revenue
+                .checked_add(revenue_u256)
+                .unwrap_or(U256::MAX);
+
+            let average = compute_average_value(&row.total_revenue, total_payments);
+
+            let token_stats = TokenStats {
+                token_address: token_address.clone(),
+                token_symbol: row.token_symbol.clone(),
+                total_subscriptions,
+                active_subscriptions,
+                total_revenue: row.total_revenue.clone(),
+                total_payments,
+                average_transaction_value: average,
+                chain_id: row.chain_id,
+            };
+
+            stats.by_token.insert(token_address, token_stats);
+        }
+
+        let total_average = compute_average_value(&totals_revenue.to_string(), totals_payments);
+
+        stats.total = TokenStats {
+            token_address: "aggregate".to_string(),
+            token_symbol: "TOTAL".to_string(),
+            total_subscriptions: totals_subscriptions,
+            active_subscriptions: totals_active,
+            total_revenue: totals_revenue.to_string(),
+            total_payments: totals_payments,
+            average_transaction_value: total_average,
+            chain_id: 0,
+        };
+
+        Ok(Some(stats))
     }
 
     async fn get_subscription_by_id(
@@ -409,6 +532,7 @@ impl RemoteEnvioClient {
                 createdAtBlock
                 chainId
                 token
+                tokenSymbol
             }
         }
         "#;
@@ -445,6 +569,9 @@ impl RemoteEnvioClient {
                 merchant
                 subscriber
                 token
+                tokenSymbol
+                nexusAttestationId
+                nexusVerified
             }
         }
         "#;
@@ -459,6 +586,90 @@ impl RemoteEnvioClient {
         Ok(response
             .data
             .map_or_else(Vec::new, |payload| payload.payment))
+    }
+
+    async fn get_cross_chain_attestations(
+        &self,
+        subscription_id: &str,
+    ) -> Result<Vec<CrossChainAttestationData>> {
+        let query = r#"
+        query CrossChainAttestations($subscriptionId: String!) {
+            CrossChainAttestation(
+                where: { subscriptionId: { _eq: $subscriptionId } }
+                order_by: { timestamp: asc }
+            ) {
+                id
+                subscriptionId
+                paymentNumber
+                sourceChainId
+                token
+                amount
+                merchant
+                txHash
+                blockNumber
+                timestamp
+                verified
+            }
+        }
+        "#;
+
+        let variables = json!({
+            "subscriptionId": subscription_id,
+        });
+
+        let response: GraphQlResponse<CrossChainAttestationPayload> =
+            self.execute_query(query, variables).await?;
+
+        Ok(response
+            .data
+            .map_or_else(Vec::new, |payload| payload.cross_chain_attestation))
+    }
+
+    async fn get_payment_with_attestation(
+        &self,
+        subscription_id: &str,
+        payment_number: u32,
+    ) -> Result<Option<PaymentEvent>> {
+        let query = r#"
+        query PaymentWithAttestation($subscriptionId: String!, $paymentNumber: Int!) {
+            Payment(
+                where: {
+                    subscriptionId: { _eq: $subscriptionId }
+                    paymentNumber: { _eq: $paymentNumber }
+                }
+                limit: 1
+            ) {
+                id
+                subscriptionId
+                paymentNumber
+                amount
+                fee
+                relayer
+                txHash
+                blockNumber
+                timestamp
+                chainId
+                merchant
+                subscriber
+                token
+                tokenSymbol
+                nexusAttestationId
+                nexusVerified
+            }
+        }
+        "#;
+
+        let variables = json!({
+            "subscriptionId": subscription_id,
+            "paymentNumber": payment_number as i64,
+        });
+
+        let response: GraphQlResponse<PaymentSinglePayload> =
+            self.execute_query(query, variables).await?;
+
+        Ok(response
+            .data
+            .and_then(|payload| payload.payment.into_iter().next()))
     }
 
     fn build_explorer_url(&self, entity_type: &str, entity_id: &str) -> String {
@@ -488,12 +699,16 @@ impl RemoteEnvioClient {
             merchant,
             subscriber,
             token,
+            token_symbol,
+            nexus_attestation_id: _,
+            nexus_verified: _,
             ..
         } = event;
 
         let token_value = token.unwrap_or_else(|| "0x0".to_string());
         let token_address = tokens::normalize_token_address(&token_value);
-        let token_symbol = tokens::get_token_symbol(&token_address).to_string();
+        let token_symbol =
+            token_symbol.unwrap_or_else(|| tokens::get_token_symbol(&token_address).to_string());
 
         Ok(TransactionData {
             subscription_id,
@@ -584,6 +799,12 @@ struct MerchantTransactionsData {
 }
 
 #[derive(Debug, Deserialize)]
+struct MerchantTokenStatsPayload {
+    #[serde(rename = "MerchantTokenStats")]
+    merchant_token_stats: Vec<MerchantTokenStatsRow>,
+}
+
+#[derive(Debug, Deserialize)]
 struct PaymentAggregateWrapper {
     aggregate: Option<PaymentAggregateFields>,
 }
@@ -600,12 +821,6 @@ struct PaymentAggregateSum {
 }
 
 #[derive(Debug, Deserialize)]
-struct MerchantStatsPayload {
-    #[serde(rename = "MerchantStats")]
-    merchant_stats: Vec<MerchantStatsData>,
-}
-
-#[derive(Debug, Deserialize)]
 struct SubscriptionPayload {
     #[serde(rename = "Subscription")]
     subscription: Vec<SubscriptionData>,
@@ -615,6 +830,53 @@ struct SubscriptionPayload {
 struct PaymentHistoryPayload {
     #[serde(rename = "Payment")]
     payment: Vec<PaymentEvent>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PaymentSinglePayload {
+    #[serde(rename = "Payment")]
+    payment: Vec<PaymentEvent>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CrossChainAttestationData {
+    pub id: String,
+    #[serde(rename = "subscriptionId")]
+    pub subscription_id: String,
+    #[serde(rename = "paymentNumber", deserialize_with = "deserialize_i64")]
+    pub payment_number: i64,
+    #[serde(rename = "sourceChainId", deserialize_with = "deserialize_i64")]
+    pub source_chain_id: i64,
+    pub token: String,
+    pub amount: String,
+    pub merchant: String,
+    #[serde(rename = "txHash")]
+    pub tx_hash: String,
+    #[serde(rename = "blockNumber", deserialize_with = "deserialize_i64")]
+    pub block_number: i64,
+    #[serde(rename = "timestamp", deserialize_with = "deserialize_i64")]
+    pub timestamp: i64,
+    pub verified: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct CrossChainAttestationPayload {
+    #[serde(rename = "CrossChainAttestation")]
+    cross_chain_attestation: Vec<CrossChainAttestationData>,
+}
+
+fn compute_average_value(total_revenue: &str, total_payments: u64) -> String {
+    if total_payments == 0 {
+        return "0".to_string();
+    }
+
+    match U256::from_dec_str(total_revenue) {
+        Ok(revenue) => {
+            let payments = U256::from(total_payments);
+            (revenue / payments).to_string()
+        }
+        Err(_) => "0".to_string(),
+    }
 }
 
 fn deserialize_i64<'de, D>(deserializer: D) -> std::result::Result<i64, D::Error>

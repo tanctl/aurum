@@ -32,12 +32,17 @@ async fn test_config_loading() {
         "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
     );
     env::set_var(
-        "PYUSD_ADDRESS_SEPOLIA",
+        "PYUSD_SEPOLIA",
         "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
     );
+    env::set_var("PYUSD_BASE", "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65");
     env::set_var(
-        "PYUSD_ADDRESS_BASE",
-        "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+        "SUPPORTED_TOKENS_SEPOLIA",
+        "0x0000000000000000000000000000000000000000,0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+    );
+    env::set_var(
+        "SUPPORTED_TOKENS_BASE",
+        "0x0000000000000000000000000000000000000000,0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
     );
     env::set_var("AVAIL_RPC_URL", "stub");
     env::remove_var("AVAIL_APPLICATION_ID");
@@ -94,12 +99,17 @@ fn test_config_validation() {
         "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
     );
     env::set_var(
-        "PYUSD_ADDRESS_SEPOLIA",
+        "PYUSD_SEPOLIA",
         "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
     );
+    env::set_var("PYUSD_BASE", "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65");
     env::set_var(
-        "PYUSD_ADDRESS_BASE",
-        "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+        "SUPPORTED_TOKENS_SEPOLIA",
+        "0x0000000000000000000000000000000000000000,0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+    );
+    env::set_var(
+        "SUPPORTED_TOKENS_BASE",
+        "0x0000000000000000000000000000000000000000,0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
     );
     env::set_var("AVAIL_RPC_URL", "stub");
     env::remove_var("AVAIL_APPLICATION_ID");

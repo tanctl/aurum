@@ -151,35 +151,35 @@ pub struct MerchantTransactionsResponse {
     pub data_source: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MerchantStatsResponse {
     pub merchant: String,
-    #[serde(rename = "totalRevenue")]
-    pub total_revenue: String,
-    #[serde(rename = "totalTransactions")]
-    pub total_transactions: u64,
-    #[serde(rename = "activeSubscriptions")]
-    pub active_subscriptions: u64,
-    #[serde(rename = "totalSubscriptions")]
-    pub total_subscriptions: u64,
-    #[serde(rename = "averageTransactionValue")]
-    pub average_transaction_value: String,
-    #[serde(rename = "firstTransactionDate")]
-    pub first_transaction_date: Option<DateTime<Utc>>,
-    #[serde(rename = "lastTransactionDate")]
-    pub last_transaction_date: Option<DateTime<Utc>>,
-    #[serde(rename = "monthlyRevenue")]
-    pub monthly_revenue: Vec<MonthlyRevenue>,
+    #[serde(rename = "total")]
+    pub total: TokenStatsResponse,
+    #[serde(rename = "byToken")]
+    pub by_token: HashMap<String, TokenStatsResponse>,
     #[serde(rename = "envioExplorerUrl")]
     pub envio_explorer_url: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct MonthlyRevenue {
-    pub month: String,
-    pub revenue: String,
-    #[serde(rename = "transactionCount")]
-    pub transaction_count: u64,
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TokenStatsResponse {
+    #[serde(rename = "tokenAddress")]
+    pub token_address: String,
+    #[serde(rename = "tokenSymbol")]
+    pub token_symbol: String,
+    #[serde(rename = "totalSubscriptions")]
+    pub total_subscriptions: u64,
+    #[serde(rename = "activeSubscriptions")]
+    pub active_subscriptions: u64,
+    #[serde(rename = "totalRevenue")]
+    pub total_revenue: String,
+    #[serde(rename = "totalPayments")]
+    pub total_payments: u64,
+    #[serde(rename = "averageTransactionValue")]
+    pub average_transaction_value: String,
+    #[serde(rename = "chainId")]
+    pub chain_id: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -223,6 +223,27 @@ pub struct CrossChainVerificationResponse {
     pub total_amount: String,
     #[serde(rename = "lastPaymentBlock")]
     pub last_payment_block: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CrossChainAttestationResponse {
+    #[serde(rename = "attestationId")]
+    pub attestation_id: String,
+    #[serde(rename = "subscriptionId")]
+    pub subscription_id: String,
+    #[serde(rename = "paymentNumber")]
+    pub payment_number: u64,
+    #[serde(rename = "sourceChainId")]
+    pub source_chain_id: u64,
+    pub token: String,
+    pub amount: String,
+    pub merchant: String,
+    #[serde(rename = "txHash")]
+    pub tx_hash: String,
+    #[serde(rename = "blockNumber")]
+    pub block_number: u64,
+    pub timestamp: u64,
+    pub verified: bool,
 }
 
 // envio graphql types

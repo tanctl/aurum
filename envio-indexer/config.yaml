@@ -25,7 +25,11 @@ dataSources:
         - Subscription
         - Payment
         - MerchantStats
+        - MerchantTokenStats
         - RelayerStats
+        - CrossChainAttestation
+      context:
+        pyusdAddress: ${PYUSD_SEPOLIA}
       eventHandlers:
         - event: SubscriptionCreated(bytes32,address,address,uint256,uint256,uint256,uint256,uint256)
           handler: handleSubscriptionCreated
@@ -39,6 +43,10 @@ dataSources:
           handler: handlePaymentExecuted
         - event: PaymentFailed(bytes32,address,address,uint256,string)
           handler: handlePaymentFailed
+        - event: NexusAttestationSubmitted(bytes32,uint256,string)
+          handler: handleNexusAttestationSubmitted
+        - event: NexusAttestationVerified(string)
+          handler: handleNexusAttestationVerified
 
   - name: subscriptionManagerBaseSepolia
     kind: ethereum/contract
@@ -53,7 +61,11 @@ dataSources:
         - Subscription
         - Payment
         - MerchantStats
+        - MerchantTokenStats
         - RelayerStats
+        - CrossChainAttestation
+      context:
+        pyusdAddress: ${PYUSD_BASE}
       eventHandlers:
         - event: SubscriptionCreated(bytes32,address,address,uint256,uint256,uint256,uint256,uint256)
           handler: handleSubscriptionCreated
@@ -67,6 +79,10 @@ dataSources:
           handler: handlePaymentExecuted
         - event: PaymentFailed(bytes32,address,address,uint256,string)
           handler: handlePaymentFailed
+        - event: NexusAttestationSubmitted(bytes32,uint256,string)
+          handler: handleNexusAttestationSubmitted
+        - event: NexusAttestationVerified(string)
+          handler: handleNexusAttestationVerified
 
   - name: relayerRegistrySepolia
     kind: ethereum/contract

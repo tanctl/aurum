@@ -211,13 +211,20 @@ async fn test_blockchain_client_with_anvil() {
         "SUBSCRIPTION_MANAGER_ADDRESS_BASE",
         format!("{:#x}", subscription_manager_base.address()),
     );
+    let pyusd_sepolia = format!("{:#x}", mock_pyusd_sepolia.address()).to_lowercase();
+    let pyusd_base = format!("{:#x}", mock_pyusd_base.address()).to_lowercase();
+    std::env::set_var("PYUSD_SEPOLIA", &pyusd_sepolia);
+    std::env::set_var("PYUSD_BASE", &pyusd_base);
     std::env::set_var(
-        "PYUSD_ADDRESS_SEPOLIA",
-        format!("{:#x}", mock_pyusd_sepolia.address()),
+        "SUPPORTED_TOKENS_SEPOLIA",
+        format!(
+            "0x0000000000000000000000000000000000000000,{}",
+            pyusd_sepolia
+        ),
     );
     std::env::set_var(
-        "PYUSD_ADDRESS_BASE",
-        format!("{:#x}", mock_pyusd_base.address()),
+        "SUPPORTED_TOKENS_BASE",
+        format!("0x0000000000000000000000000000000000000000,{}", pyusd_base),
     );
     std::env::set_var("AVAIL_RPC_URL", "stub");
     std::env::remove_var("AVAIL_APPLICATION_ID");
