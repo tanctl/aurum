@@ -28,12 +28,17 @@ fn setup_test_env() {
         "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
     );
     env::set_var(
-        "PYUSD_ADDRESS_SEPOLIA",
+        "PYUSD_SEPOLIA",
         "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
     );
+    env::set_var("PYUSD_BASE", "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9");
     env::set_var(
-        "PYUSD_ADDRESS_BASE",
-        "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+        "SUPPORTED_TOKENS_SEPOLIA",
+        "0x0000000000000000000000000000000000000000,0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+    );
+    env::set_var(
+        "SUPPORTED_TOKENS_BASE",
+        "0x0000000000000000000000000000000000000000,0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
     );
     env::set_var("AVAIL_RPC_URL", "stub");
     env::remove_var("AVAIL_APPLICATION_ID");

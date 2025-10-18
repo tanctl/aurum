@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id,\n                subscriber,\n                merchant,\n                amount,\n                interval_seconds,\n                start_time,\n                max_payments,\n                max_total_amount,\n                expiry,\n                nonce,\n                token,\n                status,\n                executed_payments,\n                total_paid,\n                next_payment_due,\n                failure_count,\n                created_at,\n                updated_at,\n                chain,\n                avail_block_number,\n                avail_extrinsic_index\n            FROM subscriptions \n            WHERE status = 'ACTIVE' \n                AND expiry > NOW()\n                AND executed_payments < max_payments\n                AND next_payment_due <= NOW()\n                AND length(id) <= 66\n            ORDER BY next_payment_due ASC, id ASC\n            LIMIT $1 OFFSET $2\n            ",
+  "query": "\n            SELECT\n                id,\n                subscriber,\n                merchant,\n                amount,\n                interval_seconds,\n                start_time,\n                max_payments,\n                max_total_amount,\n                expiry,\n                nonce,\n                token_address,\n                status,\n                executed_payments,\n                total_paid,\n                next_payment_due,\n                failure_count,\n                created_at,\n                updated_at,\n                chain,\n                avail_block_number,\n                avail_extrinsic_index\n            FROM subscriptions\n            WHERE status = 'ACTIVE'\n                AND expiry > NOW()\n                AND executed_payments < max_payments\n                AND next_payment_due <= NOW()\n            ORDER BY next_payment_due ASC\n            ",
   "describe": {
     "columns": [
       {
@@ -55,7 +55,7 @@
       },
       {
         "ordinal": 10,
-        "name": "token",
+        "name": "token_address",
         "type_info": "Varchar"
       },
       {
@@ -110,10 +110,7 @@
       }
     ],
     "parameters": {
-      "Left": [
-        "Int8",
-        "Int8"
-      ]
+      "Left": []
     },
     "nullable": [
       false,
@@ -139,5 +136,5 @@
       true
     ]
   },
-  "hash": "3727b683e586d0f3419bcbea70488e06b877c8d53e1da053b01e514a7c421938"
+  "hash": "5a813d941ff8e6550b221f39f6a30d87db416df3c895602363033e78e6859d7c"
 }

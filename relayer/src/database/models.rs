@@ -14,7 +14,7 @@ pub struct Subscription {
     pub max_total_amount: String,
     pub expiry: DateTime<Utc>,
     pub nonce: i64,
-    pub token: String,
+    pub token_address: String,
     pub status: String, // "ACTIVE", "PAUSED", "CANCELLED", "EXPIRED", "COMPLETED"
     pub executed_payments: i64,
     pub total_paid: String, // large numbers
@@ -47,6 +47,7 @@ pub struct Execution {
     pub nexus_attestation_id: Option<String>,
     pub nexus_verified: bool,
     pub nexus_submitted_at: Option<DateTime<Utc>>,
+    pub token_address: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,6 +66,7 @@ pub struct ExecutionRecord {
     pub nexus_attestation_id: Option<String>,
     pub nexus_verified: bool,
     pub nexus_submitted_at: Option<DateTime<Utc>>,
+    pub token_address: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

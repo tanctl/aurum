@@ -5,6 +5,7 @@ use axum::{
 use chrono::Utc;
 use ethers::types::{Address, U256};
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -16,6 +17,7 @@ use super::validation::ValidationService;
 use crate::database::models::{IntentCache, Subscription};
 use crate::integrations::hypersync::{HyperSyncClient, RawPaymentEvent};
 use crate::metrics::MetricsSnapshot;
+use crate::utils::tokens;
 use crate::{AppState, RelayerError, Result};
 
 // post /api/v1/intent
@@ -61,6 +63,25 @@ pub async fn submit_intent_handler(
         request.intent.max_payments,
         &request.intent.max_total_amount,
     )?;
+
+    let supported_tokens = app_state
+        .config
+        .supported_tokens_for_chain(chain)
+        .map_err(|e| RelayerError::Validation(e.to_string()))?;
+
+    let token_address = request.intent.token.clone();
+    if !supported_tokens.iter().any(|token| token == &token_address) {
+        return Err(RelayerError::Validation(format!(
+            "unsupported token address: {}",
+            token_address
+        )));
+    }
+
+    let token_symbol = tokens::get_token_symbol(&token_address);
+    info!(
+        "validated subscription token {} ({})",
+        token_symbol, token_address
+    );
 
     let subscription_id =
         ValidationService::generate_subscription_id(&request.intent, &request.signature)?;
@@ -150,7 +171,7 @@ pub async fn submit_intent_handler(
         expiry: chrono::DateTime::from_timestamp(request.intent.expiry as i64, 0)
             .ok_or_else(|| RelayerError::Validation("invalid expiry time".to_string()))?,
         nonce: request.intent.nonce as i64,
-        token: request.intent.token.clone(),
+        token_address: token_address,
         status: "ACTIVE".to_string(),
         executed_payments: 0,
         total_paid: "0".to_string(),
@@ -227,6 +248,8 @@ pub async fn get_subscription_handler(
         0
     };
 
+    let token_symbol = tokens::get_token_symbol(&subscription.token_address).to_string();
+
     let response = SubscriptionResponse {
         id: subscription.id,
         subscriber: subscription.subscriber,
@@ -238,7 +261,8 @@ pub async fn get_subscription_handler(
         max_total_amount: subscription.max_total_amount,
         expiry: subscription.expiry.timestamp() as u64,
         nonce: subscription.nonce as u64,
-        token: subscription.token,
+        token_address: subscription.token_address,
+        token_symbol,
         status: subscription.status,
         executed_payments: subscription.executed_payments as u64,
         total_paid: subscription.total_paid,
@@ -383,6 +407,14 @@ pub async fn get_merchant_transactions_handler(
                         }
                     };
 
+                    let raw_token = if event.token.trim().is_empty() {
+                        "0x0"
+                    } else {
+                        event.token.as_str()
+                    };
+                    let token_address = tokens::normalize_token_address(raw_token);
+                    let token_symbol = tokens::get_token_symbol(&token_address).to_string();
+
                     transactions.push(TransactionData {
                         subscription_id: event.subscription_id.clone(),
                         subscriber: event.subscriber.clone(),
@@ -395,7 +427,8 @@ pub async fn get_merchant_transactions_handler(
                         block_number: event.block_number,
                         timestamp,
                         chain: chain_name.to_string(),
-                        token: event.token.clone(),
+                        token_address,
+                        token_symbol,
                     });
                 }
 
@@ -408,6 +441,28 @@ pub async fn get_merchant_transactions_handler(
                 } else {
                     Vec::new()
                 };
+
+                let mut page_token_totals: HashMap<String, U256> = HashMap::new();
+                for tx in &paginated {
+                    let amount = U256::from_dec_str(&tx.amount).unwrap_or_else(|_| U256::zero());
+                    let entry = page_token_totals
+                        .entry(tx.token_symbol.clone())
+                        .or_insert(U256::zero());
+                    *entry = entry.checked_add(amount).unwrap_or(U256::MAX);
+                }
+
+                let token_totals = page_token_totals
+                    .into_iter()
+                    .map(|(symbol, amount)| {
+                        let decimals = match symbol.as_str() {
+                            "ETH" => 18,
+                            "PYUSD" => 6,
+                            _ => 18,
+                        };
+                        let formatted = tokens::format_token_amount(amount, decimals);
+                        (symbol, formatted)
+                    })
+                    .collect::<HashMap<_, _>>();
 
                 app_state
                     .metrics
@@ -422,6 +477,7 @@ pub async fn get_merchant_transactions_handler(
                     transactions: paginated,
                     count: total_count as u64,
                     total_revenue: total_revenue.to_string(),
+                    token_totals,
                     envio_explorer_url: explorer_url,
                     page,
                     has_more,
@@ -457,6 +513,7 @@ pub async fn get_merchant_transactions_handler(
         transactions: envio_result.transactions,
         count: envio_result.total_count,
         total_revenue: envio_result.total_revenue,
+        token_totals: envio_result.token_totals,
         envio_explorer_url: envio_result
             .explorer_url
             .unwrap_or_else(|| "https://explorer.envio.dev".to_string()),

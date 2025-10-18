@@ -23,7 +23,7 @@ fn sample_subscription(id: &str) -> Subscription {
         max_total_amount: "5000".to_string(),
         expiry: Utc::now() + chrono::Duration::hours(1),
         nonce: 0,
-        token: "0x0000000000000000000000000000000000000000".to_string(),
+        token_address: "0x0000000000000000000000000000000000000000".to_string(),
         status: "ACTIVE".to_string(),
         executed_payments: 0,
         total_paid: "0".to_string(),
@@ -81,6 +81,7 @@ fn sample_execution(subscription: &Subscription) -> Execution {
         nexus_attestation_id: None,
         nexus_verified: false,
         nexus_submitted_at: None,
+        token_address: Some(subscription.token_address.clone()),
     }
 }
 

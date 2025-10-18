@@ -67,6 +67,8 @@ pub struct PaymentAttestation {
     pub amount: u128,
     #[serde(with = "serde_hex_array_20")]
     pub merchant: [u8; 20],
+    #[serde(with = "serde_hex_array_20")]
+    pub token_address: [u8; 20],
     #[serde(with = "serde_hex_array_32")]
     pub tx_hash: [u8; 32],
     pub block_number: u64,

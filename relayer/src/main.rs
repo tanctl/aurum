@@ -64,6 +64,15 @@ async fn main() -> Result<()> {
         e
     })?;
 
+    database
+        .queries()
+        .backfill_legacy_token_addresses(&config)
+        .await
+        .map_err(|e| {
+            error!("failed to backfill legacy token addresses: {}", e);
+            e
+        })?;
+
     // initialize blockchain client
     let blockchain_client = BlockchainClient::new(&config).await.map_err(|e| {
         error!("failed to initialize blockchain client: {}", e);

@@ -5149,6 +5149,7 @@ dependencies = [
  "hypersync-client",
  "mockito",
  "nexus-sdk",
+ "once_cell",
  "pg-embed",
  "reqwest 0.11.27",
  "serde",

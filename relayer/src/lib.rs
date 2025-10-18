@@ -14,6 +14,7 @@ pub mod error;
 pub mod integrations;
 pub mod metrics;
 pub mod scheduler;
+pub mod utils;
 
 pub use avail::{
     AttestationStatus, AttestationSubmission, AvailClient, AvailClientMode,

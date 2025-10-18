@@ -1,6 +1,8 @@
+use crate::utils::tokens;
 use chrono::{DateTime, Utc};
 use ethers::types::{Address, U256};
 use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::HashMap;
 use std::str::FromStr;
 
 // request types
@@ -47,7 +49,7 @@ pub struct SubscriptionIntent {
     pub expiry: u64,
     #[serde(deserialize_with = "deserialize_positive_number")]
     pub nonce: u64,
-    #[serde(deserialize_with = "deserialize_address")]
+    #[serde(deserialize_with = "deserialize_token_address")]
     pub token: String,
 }
 
@@ -78,7 +80,10 @@ pub struct SubscriptionResponse {
     pub max_total_amount: String,
     pub expiry: u64,
     pub nonce: u64,
-    pub token: String,
+    #[serde(rename = "tokenAddress")]
+    pub token_address: String,
+    #[serde(rename = "tokenSymbol")]
+    pub token_symbol: String,
     pub status: String,
     #[serde(rename = "executedPayments")]
     pub executed_payments: u64,
@@ -123,7 +128,10 @@ pub struct TransactionData {
     pub block_number: u64,
     pub timestamp: u64,
     pub chain: String,
-    pub token: String,
+    #[serde(rename = "tokenAddress")]
+    pub token_address: String,
+    #[serde(rename = "tokenSymbol")]
+    pub token_symbol: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -132,6 +140,8 @@ pub struct MerchantTransactionsResponse {
     pub count: u64,
     #[serde(rename = "totalRevenue")]
     pub total_revenue: String,
+    #[serde(rename = "tokenTotals")]
+    pub token_totals: HashMap<String, String>,
     #[serde(rename = "envioExplorerUrl")]
     pub envio_explorer_url: String,
     pub page: u32,
@@ -257,6 +267,34 @@ where
     Address::from_str(&s).map_err(|_| serde::de::Error::custom("invalid ethereum address"))?;
 
     Ok(s.to_lowercase())
+}
+
+fn deserialize_token_address<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    let trimmed = s.trim();
+
+    if trimmed.eq_ignore_ascii_case("0x0") {
+        return Ok(tokens::normalize_token_address(trimmed));
+    }
+
+    if !trimmed.starts_with("0x") || trimmed.len() != 42 {
+        return Err(serde::de::Error::custom(
+            "token must be 0x0 or 0x followed by 40 hex characters",
+        ));
+    }
+
+    if !trimmed[2..].chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(serde::de::Error::custom(
+            "token address contains invalid hex characters",
+        ));
+    }
+
+    Address::from_str(trimmed).map_err(|_| serde::de::Error::custom("invalid token address"))?;
+
+    Ok(tokens::normalize_token_address(trimmed))
 }
 
 fn deserialize_amount<'de, D>(deserializer: D) -> Result<String, D::Error>

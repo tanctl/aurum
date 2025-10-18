@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
+use ethers::types::U256;
 use reqwest::{Client, StatusCode};
 use serde::{de, Deserialize, Deserializer};
 use serde_json::{json, Value};
@@ -7,6 +9,7 @@ use tracing::warn;
 
 use crate::api::types::TransactionData;
 use crate::error::{RelayerError, Result};
+use crate::utils::tokens;
 
 #[derive(Clone)]
 pub struct EnvioClient {
@@ -103,6 +106,7 @@ pub struct MerchantTransactionsResult {
     pub transactions: Vec<TransactionData>,
     pub total_count: u64,
     pub total_revenue: String,
+    pub token_totals: HashMap<String, String>,
     pub has_more: bool,
     pub explorer_url: Option<String>,
 }
@@ -149,6 +153,7 @@ impl EnvioClient {
                 transactions: Vec::new(),
                 total_count: 0,
                 total_revenue: "0".to_string(),
+                token_totals: HashMap::new(),
                 has_more: false,
                 explorer_url: None,
             }),
@@ -309,10 +314,33 @@ impl RemoteEnvioClient {
 
         let has_more = ((page + 1) as u64 * page_size as u64) < total_count;
 
+        let mut token_totals_map: HashMap<String, U256> = HashMap::new();
+        for tx in &transactions {
+            let amount = U256::from_dec_str(&tx.amount).unwrap_or_else(|_| U256::zero());
+            let entry = token_totals_map
+                .entry(tx.token_symbol.clone())
+                .or_insert(U256::zero());
+            *entry = entry.checked_add(amount).unwrap_or(U256::MAX);
+        }
+
+        let token_totals = token_totals_map
+            .into_iter()
+            .map(|(symbol, amount)| {
+                let decimals = match symbol.as_str() {
+                    "ETH" => 18,
+                    "PYUSD" => 6,
+                    _ => 18,
+                };
+                let formatted = tokens::format_token_amount(amount, decimals);
+                (symbol, formatted)
+            })
+            .collect::<HashMap<_, _>>();
+
         Ok(MerchantTransactionsResult {
             transactions,
             total_count,
             total_revenue,
+            token_totals,
             has_more,
             explorer_url: Some(
                 self.build_explorer_url("payments", &merchant_address.to_lowercase()),
@@ -447,23 +475,41 @@ impl RemoteEnvioClient {
         event: PaymentEvent,
         merchant_address: &str,
     ) -> Result<TransactionData> {
+        let PaymentEvent {
+            subscription_id,
+            payment_number,
+            amount,
+            fee,
+            relayer,
+            tx_hash,
+            block_number,
+            timestamp,
+            chain_id,
+            merchant,
+            subscriber,
+            token,
+            ..
+        } = event;
+
+        let token_value = token.unwrap_or_else(|| "0x0".to_string());
+        let token_address = tokens::normalize_token_address(&token_value);
+        let token_symbol = tokens::get_token_symbol(&token_address).to_string();
+
         Ok(TransactionData {
-            subscription_id: event.subscription_id.clone(),
-            subscriber: event
-                .subscriber
+            subscription_id,
+            subscriber: subscriber
                 .unwrap_or_else(|| "0x0000000000000000000000000000000000000000".to_string()),
-            merchant: merchant_address.to_lowercase(),
-            payment_number: event.payment_number as u64,
-            amount: event.amount,
-            fee: event.fee,
-            relayer: event.relayer,
-            transaction_hash: event.tx_hash,
-            block_number: event.block_number as u64,
-            timestamp: event.timestamp as u64,
-            chain: event.chain_id.to_string(),
-            token: event
-                .token
-                .unwrap_or_else(|| "0x0000000000000000000000000000000000000000".to_string()),
+            merchant: merchant.unwrap_or_else(|| merchant_address.to_lowercase()),
+            payment_number: payment_number as u64,
+            amount,
+            fee,
+            relayer,
+            transaction_hash: tx_hash,
+            block_number: block_number as u64,
+            timestamp: timestamp as u64,
+            chain: chain_id.to_string(),
+            token_address,
+            token_symbol,
         })
     }
 

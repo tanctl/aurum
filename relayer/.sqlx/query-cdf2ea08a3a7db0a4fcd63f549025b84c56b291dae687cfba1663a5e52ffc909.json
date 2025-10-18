@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id,\n                subscriber,\n                merchant,\n                amount,\n                interval_seconds,\n                start_time,\n                max_payments,\n                max_total_amount,\n                expiry,\n                nonce,\n                token,\n                status,\n                executed_payments,\n                total_paid,\n                next_payment_due,\n                failure_count,\n                created_at,\n                updated_at,\n                chain,\n                avail_block_number,\n                avail_extrinsic_index\n            FROM subscriptions\n            WHERE status = 'ACTIVE'\n                AND expiry > NOW()\n                AND executed_payments < max_payments\n                AND next_payment_due <= NOW()\n            ORDER BY next_payment_due ASC\n            ",
+  "query": "\n            SELECT\n                id,\n                subscriber,\n                merchant,\n                amount,\n                interval_seconds,\n                start_time,\n                max_payments,\n                max_total_amount,\n                expiry,\n                nonce,\n                token_address,\n                status,\n                executed_payments,\n                total_paid,\n                next_payment_due,\n                failure_count,\n                created_at,\n                updated_at,\n                chain,\n                avail_block_number,\n                avail_extrinsic_index\n            FROM subscriptions\n            WHERE id = $1\n            FOR UPDATE\n            ",
   "describe": {
     "columns": [
       {
@@ -55,7 +55,7 @@
       },
       {
         "ordinal": 10,
-        "name": "token",
+        "name": "token_address",
         "type_info": "Varchar"
       },
       {
@@ -110,7 +110,9 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Text"
+      ]
     },
     "nullable": [
       false,
@@ -136,5 +138,5 @@
       true
     ]
   },
-  "hash": "92787552613b3506049117eceb705aa70de0b10b6b17bc2eb6927e29983753a9"
+  "hash": "cdf2ea08a3a7db0a4fcd63f549025b84c56b291dae687cfba1663a5e52ffc909"
 }

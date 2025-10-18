@@ -3,6 +3,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use relayer::api::types::*;
+use relayer::utils::tokens;
 use relayer::{AppState, AvailClient, BlockchainClient, Config, Database, EnvioClient, Metrics};
 use std::sync::Arc;
 use tower::util::ServiceExt;
@@ -21,6 +22,14 @@ async fn create_test_app_state() -> Arc<AppState> {
         subscription_manager_address_base: "0x1234567890123456789012345678901234567890".to_string(),
         pyusd_address_sepolia: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd".to_string(),
         pyusd_address_base: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd".to_string(),
+        supported_tokens_sepolia: vec![
+            "0x0000000000000000000000000000000000000000".to_string(),
+            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd".to_string(),
+        ],
+        supported_tokens_base: vec![
+            "0x0000000000000000000000000000000000000000".to_string(),
+            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd".to_string(),
+        ],
         server_host: "0.0.0.0".to_string(),
         server_port: 3000,
         execution_interval_seconds: 60,
@@ -39,6 +48,11 @@ async fn create_test_app_state() -> Arc<AppState> {
         nexus_application_id: None,
         nexus_signer_key: None,
     };
+
+    tokens::register_pyusd_addresses(&[
+        config.pyusd_address_sepolia.clone(),
+        config.pyusd_address_base.clone(),
+    ]);
 
     let database = Database::new(&config.database_url)
         .await
@@ -96,7 +110,7 @@ fn create_test_intent() -> SubscriptionIntent {
         max_total_amount: "12000000000000000000".to_string(), // 12 ETH
         expiry: now + (365 * 24 * 60 * 60),                   // 1 year
         nonce: 1,
-        token: "0x0000000000000000000000000000000000000000".to_string(),
+        token_address: "0x0000000000000000000000000000000000000000".to_string(),
     }
 }
 
@@ -173,6 +187,34 @@ async fn test_submit_intent_validation_errors() {
                 .uri("/api/v1/intent")
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_vec(&request_body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_submit_intent_rejects_unsupported_token() {
+    let app_state = create_test_app_state().await;
+    let app = relayer::api::ApiServer::create(app_state).await;
+
+    let mut intent = create_test_intent();
+    intent.token = "0xdeaddeaddeaddeaddeaddeaddeaddeaddeaddead".to_string();
+    let payload = SubmitIntentRequest {
+        intent,
+        signature: "0x1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890".to_string(),
+    };
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/intent")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
                 .unwrap(),
         )
         .await

@@ -7,6 +7,7 @@ use crate::database::queries::Queries;
 use crate::error::{RelayerError, Result};
 use crate::integrations::hypersync::HyperSyncClient;
 use crate::metrics::Metrics;
+use crate::utils::tokens;
 use crate::Config;
 use chrono::Utc;
 use ethers::types::{Address, H256, U256};
@@ -81,8 +82,8 @@ fn u256_to_u128(value: U256) -> Result<u128> {
 #[derive(Debug, Clone)]
 pub enum ValidationResult {
     Valid,
-    InsufficientBalance,
-    InsufficientAllowance,
+    InsufficientBalance { token_address: String },
+    InsufficientAllowance { token_address: String },
     NotDue,
     SubscriptionNotActive,
     SubscriptionNotFound,
@@ -325,6 +326,19 @@ impl Scheduler {
         );
 
         for subscription in due_subscriptions {
+            let token_symbol = tokens::get_token_symbol(&subscription.token_address);
+            if tokens::is_eth(&subscription.token_address) {
+                info!(
+                    "processing payment for subscription {} with native {} ({})",
+                    subscription.id, token_symbol, subscription.token_address
+                );
+            } else {
+                info!(
+                    "processing payment for subscription {} with erc20 {} ({})",
+                    subscription.id, token_symbol, subscription.token_address
+                );
+            }
+
             if let Err(e) = self.process_single_subscription(&subscription).await {
                 error!("failed to process subscription {}: {}", subscription.id, e);
                 self.handle_subscription_failure(&subscription, &e).await?;
@@ -336,9 +350,10 @@ impl Scheduler {
 
     #[allow(dead_code)]
     async fn process_single_subscription(&self, subscription: &Subscription) -> Result<()> {
+        let token_symbol = tokens::get_token_symbol(&subscription.token_address);
         info!(
-            "processing subscription {} for subscriber {}",
-            subscription.id, subscription.subscriber
+            "processing subscription {} for subscriber {} using {} ({})",
+            subscription.id, subscription.subscriber, token_symbol, subscription.token_address
         );
 
         ensure_intent_cached_job_safe(subscription, &self.queries, self.avail_client.as_ref())
@@ -363,20 +378,31 @@ impl Scheduler {
                     subscription.id, execution_result.transaction_hash
                 );
             }
-            ValidationResult::InsufficientBalance => {
-                warn!("subscription {} has insufficient balance", subscription.id);
-                return Err(RelayerError::Validation(
-                    "insufficient subscriber balance".to_string(),
-                ));
-            }
-            ValidationResult::InsufficientAllowance => {
+            ValidationResult::InsufficientBalance { token_address } => {
+                let symbol = tokens::get_token_symbol(&token_address);
                 warn!(
-                    "subscription {} has insufficient allowance",
-                    subscription.id
+                    "subscription {} has insufficient {} balance (token {})",
+                    subscription.id, symbol, token_address
                 );
-                return Err(RelayerError::Validation(
-                    "insufficient subscriber allowance".to_string(),
-                ));
+                let message = match symbol {
+                    "ETH" => "Insufficient ETH balance".to_string(),
+                    "PYUSD" => "Insufficient PYUSD balance".to_string(),
+                    other => format!("insufficient {} balance", other),
+                };
+                return Err(RelayerError::Validation(message));
+            }
+            ValidationResult::InsufficientAllowance { token_address } => {
+                let symbol = tokens::get_token_symbol(&token_address);
+                warn!(
+                    "subscription {} has insufficient {} allowance (token {})",
+                    subscription.id, symbol, token_address
+                );
+                let message = match symbol {
+                    "ETH" => "ETH deposit required".to_string(),
+                    "PYUSD" => "PYUSD allowance required".to_string(),
+                    other => format!("{} allowance required", other),
+                };
+                return Err(RelayerError::Validation(message));
             }
             ValidationResult::NotDue => {
                 info!("subscription {} is not due yet", subscription.id);
@@ -395,7 +421,10 @@ impl Scheduler {
                 ));
             }
             ValidationResult::ChainError(msg) => {
-                error!("chain error for subscription {}: {}", subscription.id, msg);
+                error!(
+                    "chain error for subscription {} on token {} ({}): {}",
+                    subscription.id, token_symbol, subscription.token_address, msg
+                );
                 return Err(RelayerError::ContractRevert(msg));
             }
         }
@@ -405,7 +434,12 @@ impl Scheduler {
 
     #[allow(dead_code)]
     async fn validate_payment(&self, subscription: &Subscription) -> Result<ValidationResult> {
-        info!("validating payment for subscription {}", subscription.id);
+        let token_address_str = subscription.token_address.clone();
+        let token_symbol = tokens::get_token_symbol(&token_address_str);
+        info!(
+            "validating payment for subscription {} using {} ({})",
+            subscription.id, token_symbol, token_address_str
+        );
 
         // validate subscription id format first
         if subscription.id.len() > MAX_ID_LENGTH {
@@ -416,7 +450,7 @@ impl Scheduler {
 
         let chain = &subscription.chain;
         let subscription_id_bytes = subscription_id_to_bytes(&subscription.id)?;
-        let token_address = Address::from_str(&subscription.token)
+        let token_address = Address::from_str(&token_address_str)
             .map_err(|_| RelayerError::Validation("invalid token address".to_string()))?;
 
         // get current blockchain state with timeout
@@ -448,9 +482,10 @@ impl Scheduler {
         }
 
         if on_chain_subscription.token != token_address {
-            return Ok(ValidationResult::ChainError(
-                "token mismatch between database and chain".to_string(),
-            ));
+            return Ok(ValidationResult::ChainError(format!(
+                "token mismatch between database ({}) and chain ({:?})",
+                token_address_str, on_chain_subscription.token
+            )));
         }
 
         // check nonce consistency between database and contract
@@ -522,28 +557,24 @@ impl Scheduler {
             .parse()
             .map_err(|_| RelayerError::Validation("invalid subscriber address".to_string()))?;
 
-        let balance = if token_address == Address::zero() {
-            U256::MAX
-        } else {
-            match tokio::time::timeout(
-                Duration::from_secs(15),
-                self.blockchain_client
-                    .check_balance(subscriber_address, token_address, chain),
-            )
-            .await
-            {
-                Ok(Ok(bal)) => bal,
-                Ok(Err(e)) => {
-                    return Ok(ValidationResult::ChainError(format!(
-                        "balance check failed: {}",
-                        e
-                    )))
-                }
-                Err(_) => {
-                    return Ok(ValidationResult::ChainError(
-                        "balance check timeout".to_string(),
-                    ))
-                }
+        let balance = match tokio::time::timeout(
+            Duration::from_secs(15),
+            self.blockchain_client
+                .check_balance(subscriber_address, token_address, chain),
+        )
+        .await
+        {
+            Ok(Ok(bal)) => bal,
+            Ok(Err(e)) => {
+                return Ok(ValidationResult::ChainError(format!(
+                    "balance check failed: {}",
+                    e
+                )))
+            }
+            Err(_) => {
+                return Ok(ValidationResult::ChainError(
+                    "balance check timeout".to_string(),
+                ))
             }
         };
 
@@ -558,41 +589,51 @@ impl Scheduler {
             ));
         }
 
-        if token_address != Address::zero() && balance < payment_amount {
-            return Ok(ValidationResult::InsufficientBalance);
+        info!(
+            "subscription {} balance check: {} available for token {} ({}) needing {}",
+            subscription.id, balance, token_symbol, token_address_str, payment_amount
+        );
+
+        if balance < payment_amount {
+            return Ok(ValidationResult::InsufficientBalance {
+                token_address: token_address_str.clone(),
+            });
         }
 
-        let has_allowance = if token_address == Address::zero() {
-            true
-        } else {
-            match tokio::time::timeout(
-                Duration::from_secs(15),
-                self.blockchain_client.check_allowance(
-                    subscriber_address,
-                    token_address,
-                    payment_amount,
-                    chain,
-                ),
-            )
-            .await
-            {
-                Ok(Ok(allowance)) => allowance,
-                Ok(Err(e)) => {
-                    return Ok(ValidationResult::ChainError(format!(
-                        "allowance check failed: {}",
-                        e
-                    )))
-                }
-                Err(_) => {
-                    return Ok(ValidationResult::ChainError(
-                        "allowance check timeout".to_string(),
-                    ))
-                }
+        let has_allowance = match tokio::time::timeout(
+            Duration::from_secs(15),
+            self.blockchain_client.check_allowance(
+                subscriber_address,
+                token_address,
+                payment_amount,
+                chain,
+            ),
+        )
+        .await
+        {
+            Ok(Ok(allowance)) => allowance,
+            Ok(Err(e)) => {
+                return Ok(ValidationResult::ChainError(format!(
+                    "allowance check failed: {}",
+                    e
+                )))
+            }
+            Err(_) => {
+                return Ok(ValidationResult::ChainError(
+                    "allowance check timeout".to_string(),
+                ))
             }
         };
 
+        info!(
+            "subscription {} allowance check: {} for token {} ({})",
+            subscription.id, has_allowance, token_symbol, token_address_str
+        );
+
         if !has_allowance {
-            return Ok(ValidationResult::InsufficientAllowance);
+            return Ok(ValidationResult::InsufficientAllowance {
+                token_address: token_address_str,
+            });
         }
 
         info!(
@@ -607,9 +648,10 @@ impl Scheduler {
         &self,
         subscription: &Subscription,
     ) -> Result<ExecutionResult> {
+        let token_symbol = tokens::get_token_symbol(&subscription.token_address);
         info!(
-            "executing payment on chain for subscription {}",
-            subscription.id
+            "executing payment on chain for subscription {} using {} ({})",
+            subscription.id, token_symbol, subscription.token_address
         );
 
         let chain = &subscription.chain;
@@ -764,32 +806,41 @@ impl Scheduler {
             nexus_attestation_id: None,
             nexus_verified: false,
             nexus_submitted_at: None,
+            token_address: Some(subscription.token_address.clone()),
         };
 
         if let Some(client) = &self.nexus_client {
             match build_payment_attestation(subscription, execution_result, &self.blockchain_client)
                 .await
             {
-                Ok(attestation) => match client.submit_payment_attestation(attestation).await {
-                    Ok(submission) => {
-                        execution_record.nexus_attestation_id =
-                            Some(submission.attestation_id.clone());
-                        execution_record.nexus_submitted_at = Some(submission.submitted_at);
-                        execution_record.nexus_verified =
-                            matches!(client.mode(), NexusClientMode::Stub);
-                        info!(
-                            "submitted nexus attestation {} for subscription {}",
-                            submission.attestation_id, subscription.id
-                        );
+                Ok(attestation) => {
+                    let token_hex = format!("0x{}", hex::encode(attestation.token_address));
+                    info!(
+                        "submitting attestation for {} with token {}",
+                        subscription.id, token_hex
+                    );
+
+                    match client.submit_payment_attestation(attestation).await {
+                        Ok(submission) => {
+                            execution_record.nexus_attestation_id =
+                                Some(submission.attestation_id.clone());
+                            execution_record.nexus_submitted_at = Some(submission.submitted_at);
+                            execution_record.nexus_verified =
+                                matches!(client.mode(), NexusClientMode::Stub);
+                            info!(
+                                "submitted nexus attestation {} for subscription {}",
+                                submission.attestation_id, subscription.id
+                            );
+                        }
+                        Err(err) => {
+                            // keep the core payment flow running even if nexus rejects the submission
+                            warn!(
+                                "failed to submit nexus attestation for subscription {}: {}",
+                                subscription.id, err
+                            );
+                        }
                     }
-                    Err(err) => {
-                        // keep the core payment flow running even if nexus rejects the submission
-                        warn!(
-                            "failed to submit nexus attestation for subscription {}: {}",
-                            subscription.id, err
-                        );
-                    }
-                },
+                }
                 Err(err) => warn!(
                     "skipping nexus attestation for subscription {}: {}",
                     subscription.id, err
@@ -1104,20 +1155,31 @@ async fn process_single_subscription_job_safe(
 
             return Ok(true); // payment processed
         }
-        ValidationResult::InsufficientBalance => {
-            warn!("subscription {} has insufficient balance", subscription.id);
-            return Err(RelayerError::Validation(
-                "insufficient subscriber balance".to_string(),
-            ));
-        }
-        ValidationResult::InsufficientAllowance => {
+        ValidationResult::InsufficientBalance { token_address } => {
+            let symbol = tokens::get_token_symbol(&token_address);
             warn!(
-                "subscription {} has insufficient allowance",
-                subscription.id
+                "subscription {} has insufficient {} balance (token {})",
+                subscription.id, symbol, token_address
             );
-            return Err(RelayerError::Validation(
-                "insufficient subscriber allowance".to_string(),
-            ));
+            let message = match symbol {
+                "ETH" => "Insufficient ETH balance".to_string(),
+                "PYUSD" => "Insufficient PYUSD balance".to_string(),
+                other => format!("insufficient {} balance", other),
+            };
+            return Err(RelayerError::Validation(message));
+        }
+        ValidationResult::InsufficientAllowance { token_address } => {
+            let symbol = tokens::get_token_symbol(&token_address);
+            warn!(
+                "subscription {} has insufficient {} allowance (token {})",
+                subscription.id, symbol, token_address
+            );
+            let message = match symbol {
+                "ETH" => "ETH deposit required".to_string(),
+                "PYUSD" => "PYUSD allowance required".to_string(),
+                other => format!("{} allowance required", other),
+            };
+            return Err(RelayerError::Validation(message));
         }
         ValidationResult::NotDue => {
             debug!("subscription {} is not due yet", subscription.id);
@@ -1136,7 +1198,11 @@ async fn process_single_subscription_job_safe(
             ));
         }
         ValidationResult::ChainError(msg) => {
-            error!("chain error for subscription {}: {}", subscription.id, msg);
+            let symbol = tokens::get_token_symbol(&subscription.token_address);
+            error!(
+                "chain error for subscription {} on token {} ({}): {}",
+                subscription.id, symbol, subscription.token_address, msg
+            );
             return Err(RelayerError::ContractRevert(msg));
         }
     }
@@ -1146,7 +1212,12 @@ async fn validate_payment_job_safe(
     subscription: &Subscription,
     blockchain_client: &Arc<BlockchainClient>,
 ) -> Result<ValidationResult> {
-    info!("validating payment for subscription {}", subscription.id);
+    let token_address_str = subscription.token_address.clone();
+    let token_symbol = tokens::get_token_symbol(&token_address_str);
+    info!(
+        "validating payment for subscription {} using {} ({})",
+        subscription.id, token_symbol, token_address_str
+    );
 
     // validate subscription id format first
     if subscription.id.len() > MAX_ID_LENGTH {
@@ -1157,7 +1228,7 @@ async fn validate_payment_job_safe(
 
     let chain = &subscription.chain;
     let subscription_id_bytes = subscription_id_to_bytes(&subscription.id)?;
-    let token_address = Address::from_str(&subscription.token)
+    let token_address = Address::from_str(&token_address_str)
         .map_err(|_| RelayerError::Validation("invalid token address".to_string()))?;
 
     // get current blockchain state with timeout
@@ -1187,9 +1258,10 @@ async fn validate_payment_job_safe(
     }
 
     if on_chain_subscription.token != token_address {
-        return Ok(ValidationResult::ChainError(
-            "token mismatch between database and chain".to_string(),
-        ));
+        return Ok(ValidationResult::ChainError(format!(
+            "token mismatch between database ({}) and chain ({:?})",
+            token_address_str, on_chain_subscription.token
+        )));
     }
 
     // check if subscription has expired
@@ -1245,14 +1317,10 @@ async fn validate_payment_job_safe(
         .parse()
         .map_err(|_| RelayerError::Validation("invalid subscriber address".to_string()))?;
 
-    let balance = if token_address == Address::zero() {
-        U256::MAX
-    } else {
-        blockchain_client
-            .check_balance(subscriber_address, token_address, chain)
-            .await
-            .map_err(|e| RelayerError::ContractRevert(format!("failed to check balance: {}", e)))?
-    };
+    let balance = blockchain_client
+        .check_balance(subscriber_address, token_address, chain)
+        .await
+        .map_err(|e| RelayerError::ContractRevert(format!("failed to check balance: {}", e)))?;
 
     // verify amounts match between database and chain
     if payment_amount != on_chain_subscription.amount {
@@ -1265,28 +1333,36 @@ async fn validate_payment_job_safe(
         ));
     }
 
-    if token_address != Address::zero() && balance < payment_amount {
-        return Ok(ValidationResult::InsufficientBalance);
+    info!(
+        "subscription {} balance check: {} available for token {} ({}) needing {}",
+        subscription.id, balance, token_symbol, token_address_str, payment_amount
+    );
+
+    if balance < payment_amount {
+        return Ok(ValidationResult::InsufficientBalance {
+            token_address: token_address_str.clone(),
+        });
     }
 
-    let has_allowance = if token_address == Address::zero() {
-        true
-    } else {
-        blockchain_client
-            .check_allowance(subscriber_address, token_address, payment_amount, chain)
-            .await
-            .map_err(|e| {
-                RelayerError::ContractRevert(format!("failed to check allowance: {}", e))
-            })?
-    };
+    let has_allowance = blockchain_client
+        .check_allowance(subscriber_address, token_address, payment_amount, chain)
+        .await
+        .map_err(|e| RelayerError::ContractRevert(format!("failed to check allowance: {}", e)))?;
+
+    info!(
+        "subscription {} allowance check: {} for token {} ({})",
+        subscription.id, has_allowance, token_symbol, token_address_str
+    );
 
     if !has_allowance {
-        return Ok(ValidationResult::InsufficientAllowance);
+        return Ok(ValidationResult::InsufficientAllowance {
+            token_address: token_address_str,
+        });
     }
 
     info!(
-        "subscription {} validation completed successfully",
-        subscription.id
+        "subscription {} validation completed successfully using {} ({})",
+        subscription.id, token_symbol, subscription.token_address
     );
     Ok(ValidationResult::Valid)
 }
@@ -1295,9 +1371,10 @@ async fn execute_payment_on_chain_job_safe(
     subscription: &Subscription,
     blockchain_client: &Arc<BlockchainClient>,
 ) -> Result<ExecutionResult> {
+    let token_symbol = tokens::get_token_symbol(&subscription.token_address);
     info!(
-        "executing payment on chain for subscription {}",
-        subscription.id
+        "executing payment on chain for subscription {} using {} ({})",
+        subscription.id, token_symbol, subscription.token_address
     );
 
     let chain = &subscription.chain;
@@ -1413,15 +1490,19 @@ async fn record_successful_execution_job_safe(
         nexus_attestation_id: None,
         nexus_verified: false,
         nexus_submitted_at: None,
+        token_address: Some(subscription.token_address.clone()),
     };
 
     if let Some(nexus_client) = nexus_client {
         match build_payment_attestation(subscription, execution_result, blockchain_client).await {
             Ok(attestation) => {
-                match nexus_client
-                    .submit_payment_attestation(attestation.clone())
-                    .await
-                {
+                let token_hex = format!("0x{}", hex::encode(attestation.token_address));
+                info!(
+                    "submitting attestation for {} with token {}",
+                    subscription.id, token_hex
+                );
+
+                match nexus_client.submit_payment_attestation(attestation).await {
                     Ok(submission) => {
                         execution_record.nexus_attestation_id =
                             Some(submission.attestation_id.clone());
@@ -1480,6 +1561,7 @@ async fn build_payment_attestation(
 ) -> Result<PaymentAttestation> {
     let subscription_bytes = subscription_id_to_bytes(&subscription.id)?;
     let merchant_bytes = address_to_bytes20(&subscription.merchant)?;
+    let token_bytes = address_to_bytes20(&subscription.token_address)?;
     let tx_hash_bytes = execution_result.transaction_hash.as_bytes();
     let mut tx_hash = [0u8; 32];
     tx_hash.copy_from_slice(tx_hash_bytes);
@@ -1507,6 +1589,7 @@ async fn build_payment_attestation(
         payment_number: execution_result.payment_number,
         amount: amount_u128,
         merchant: merchant_bytes,
+        token_address: token_bytes,
         tx_hash,
         block_number: execution_result.block_number,
         timestamp,
@@ -1662,7 +1745,7 @@ mod tests {
             max_total_amount: "12000000".to_string(),
             expiry: Utc::now() + chrono::Duration::days(365),
             nonce: 1,
-            token: "0x0000000000000000000000000000000000000000".to_string(),
+            token_address: "0x0000000000000000000000000000000000000000".to_string(),
             status: "ACTIVE".to_string(),
             executed_payments: 0,
             total_paid: "0".to_string(),
@@ -1677,7 +1760,7 @@ mod tests {
     }
 
     fn stub_config() -> Config {
-        Config {
+        let config = Config {
             database_url: "stub".to_string(),
             ethereum_rpc_url: "stub".to_string(),
             base_rpc_url: "stub".to_string(),
@@ -1689,6 +1772,14 @@ mod tests {
                 .to_string(),
             pyusd_address_sepolia: "0x3333333333333333333333333333333333333333".to_string(),
             pyusd_address_base: "0x4444444444444444444444444444444444444444".to_string(),
+            supported_tokens_sepolia: vec![
+                "0x0000000000000000000000000000000000000000".to_string(),
+                "0x3333333333333333333333333333333333333333".to_string(),
+            ],
+            supported_tokens_base: vec![
+                "0x0000000000000000000000000000000000000000".to_string(),
+                "0x4444444444444444444444444444444444444444".to_string(),
+            ],
             server_host: "127.0.0.1".to_string(),
             server_port: 3000,
             execution_interval_seconds: 30,
@@ -1706,15 +1797,26 @@ mod tests {
             nexus_rpc_url: None,
             nexus_application_id: None,
             nexus_signer_key: None,
-        }
+        };
+
+        tokens::register_pyusd_addresses(&[
+            config.pyusd_address_sepolia.clone(),
+            config.pyusd_address_base.clone(),
+        ]);
+
+        config
     }
 
     #[tokio::test]
     async fn test_validation_result_variants() {
         let results = vec![
             ValidationResult::Valid,
-            ValidationResult::InsufficientBalance,
-            ValidationResult::InsufficientAllowance,
+            ValidationResult::InsufficientBalance {
+                token_address: "0x0000000000000000000000000000000000000000".to_string(),
+            },
+            ValidationResult::InsufficientAllowance {
+                token_address: "0x0000000000000000000000000000000000000000".to_string(),
+            },
             ValidationResult::NotDue,
             ValidationResult::SubscriptionNotActive,
             ValidationResult::SubscriptionNotFound,
@@ -1724,8 +1826,8 @@ mod tests {
         for result in results {
             match result {
                 ValidationResult::Valid => assert!(true),
-                ValidationResult::InsufficientBalance => assert!(true),
-                ValidationResult::InsufficientAllowance => assert!(true),
+                ValidationResult::InsufficientBalance { .. } => assert!(true),
+                ValidationResult::InsufficientAllowance { .. } => assert!(true),
                 ValidationResult::NotDue => assert!(true),
                 ValidationResult::SubscriptionNotActive => assert!(true),
                 ValidationResult::SubscriptionNotFound => assert!(true),
@@ -1912,12 +2014,15 @@ mod tests {
         );
         let subscription_hex = format!("0x{}", hex::encode(subscription_bytes));
         let merchant_hex = format!("0x{}", hex::encode(merchant_bytes));
+        let token_bytes = address_to_bytes20(&subscription.token_address).unwrap();
+        let token_hex = format!("0x{}", hex::encode(token_bytes));
         let attestation_payload = json!({
             "sourceChainId": 11155111u64,
             "subscriptionId": subscription_hex,
             "paymentNumber": execution_result.payment_number,
             "amount": execution_result.payment_amount.as_u128(),
             "merchant": merchant_hex,
+            "tokenAddress": token_hex,
             "txHash": tx_hash_hex,
             "blockNumber": execution_result.block_number,
             "timestamp": Utc::now().timestamp().max(0) as u64

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id,\n                subscriber,\n                merchant,\n                amount,\n                interval_seconds,\n                start_time,\n                max_payments,\n                max_total_amount,\n                expiry,\n                nonce,\n                token,\n                status,\n                executed_payments,\n                total_paid,\n                next_payment_due,\n                failure_count,\n                created_at,\n                updated_at,\n                chain,\n                avail_block_number,\n                avail_extrinsic_index\n            FROM subscriptions\n            WHERE id = $1\n            FOR UPDATE\n            ",
+  "query": "\n            SELECT\n                id,\n                subscriber,\n                merchant,\n                amount,\n                interval_seconds,\n                start_time,\n                max_payments,\n                max_total_amount,\n                expiry,\n                nonce,\n                token_address,\n                status,\n                executed_payments,\n                total_paid,\n                next_payment_due,\n                failure_count,\n                created_at,\n                updated_at,\n                chain,\n                avail_block_number,\n                avail_extrinsic_index\n            FROM subscriptions \n            WHERE status = 'ACTIVE' \n                AND expiry > NOW()\n                AND executed_payments < max_payments\n                AND next_payment_due <= NOW()\n                AND length(id) <= 66\n            ORDER BY next_payment_due ASC, id ASC\n            LIMIT $1 OFFSET $2\n            ",
   "describe": {
     "columns": [
       {
@@ -55,7 +55,7 @@
       },
       {
         "ordinal": 10,
-        "name": "token",
+        "name": "token_address",
         "type_info": "Varchar"
       },
       {
@@ -111,7 +111,8 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Int8",
+        "Int8"
       ]
     },
     "nullable": [
@@ -138,5 +139,5 @@
       true
     ]
   },
-  "hash": "11f03f0be1e0faba73fce00ce2622c9299e7394992ae626dbbc2b077497e9725"
+  "hash": "a51d4b7f76a2690618c06f94e04fcc3129000643e8f8bbeb596f95e53c558940"
 }

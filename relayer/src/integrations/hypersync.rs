@@ -921,7 +921,7 @@ impl HyperSyncClient {
             id: event.subscription_id.clone(),
             subscriber: format!("0x{:x}", on_chain.subscriber),
             merchant: format!("0x{:x}", on_chain.merchant),
-            token: format!("0x{:x}", on_chain.token),
+            token_address: format!("0x{:x}", on_chain.token),
             amount: on_chain.amount.to_string(),
             interval_seconds: i64::try_from(interval_secs).unwrap_or(i64::MAX),
             start_time,

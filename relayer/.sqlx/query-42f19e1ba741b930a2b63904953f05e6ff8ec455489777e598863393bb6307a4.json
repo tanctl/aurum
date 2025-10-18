@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id,\n                subscriber,\n                merchant,\n                amount,\n                interval_seconds,\n                start_time,\n                max_payments,\n                max_total_amount,\n                expiry,\n                nonce,\n                token,\n                status,\n                executed_payments,\n                total_paid,\n                next_payment_due,\n                failure_count,\n                created_at,\n                updated_at,\n                chain,\n                avail_block_number,\n                avail_extrinsic_index\n            FROM subscriptions\n            WHERE status = 'ACTIVE'\n                AND chain = $1\n                AND expiry > NOW()\n                AND executed_payments < max_payments\n                AND next_payment_due <= NOW()\n            ORDER BY next_payment_due ASC\n            LIMIT $2\n            ",
+  "query": "\n            SELECT\n                id,\n                subscriber,\n                merchant,\n                amount,\n                interval_seconds,\n                start_time,\n                max_payments,\n                max_total_amount,\n                expiry,\n                nonce,\n                token_address,\n                status,\n                executed_payments,\n                total_paid,\n                next_payment_due,\n                failure_count,\n                created_at,\n                updated_at,\n                chain,\n                avail_block_number,\n                avail_extrinsic_index\n            FROM subscriptions\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -55,7 +55,7 @@
       },
       {
         "ordinal": 10,
-        "name": "token",
+        "name": "token_address",
         "type_info": "Varchar"
       },
       {
@@ -111,8 +111,7 @@
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Int8"
+        "Text"
       ]
     },
     "nullable": [
@@ -139,5 +138,5 @@
       true
     ]
   },
-  "hash": "b08af7e43589f5a06a2bf301b353c33e6f2c0a23cd6eefdd2577bd3877d0a1fa"
+  "hash": "42f19e1ba741b930a2b63904953f05e6ff8ec455489777e598863393bb6307a4"
 }

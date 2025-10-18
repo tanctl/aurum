@@ -7,7 +7,10 @@ use super::{
     },
     StubStorage,
 };
-use crate::error::{RelayerError, Result};
+use crate::{
+    config::Config,
+    error::{RelayerError, Result},
+};
 use chrono::{DateTime, Utc};
 use ethers::types::U256;
 use sqlx::{types::BigDecimal, PgPool};
@@ -37,6 +40,61 @@ impl Queries {
 
     fn postgres_pool(&self) -> Option<&PgPool> {
         self.pool.as_ref()
+    }
+
+    pub async fn backfill_legacy_token_addresses(&self, config: &Config) -> Result<()> {
+        const ZERO_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
+
+        if let Some(storage) = self.stub_storage() {
+            let mut subscriptions = storage.subscriptions.lock().unwrap();
+            for subscription in subscriptions.values_mut() {
+                if subscription.token_address == ZERO_ADDRESS {
+                    let replacement = match subscription.chain.to_lowercase().as_str() {
+                        "sepolia" => Some(config.pyusd_address_sepolia.clone()),
+                        "base" => Some(config.pyusd_address_base.clone()),
+                        _ => None,
+                    };
+
+                    if let Some(address) = replacement {
+                        subscription.token_address = address;
+                    }
+                }
+            }
+        }
+
+        if let Some(pool) = self.postgres_pool() {
+            let updates = vec![
+                ("sepolia", &config.pyusd_address_sepolia),
+                ("base", &config.pyusd_address_base),
+            ];
+
+            for (chain, address) in updates {
+                let result = sqlx::query(
+                    "UPDATE subscriptions SET token_address = $1 WHERE chain = $2 AND token_address = $3",
+                )
+                .bind(address)
+                .bind(chain)
+                .bind(ZERO_ADDRESS)
+                .execute(pool)
+                .await
+                .map_err(|e| {
+                    RelayerError::DatabaseError(format!(
+                        "failed to backfill token address for {}: {}",
+                        chain, e
+                    ))
+                })?;
+
+                if result.rows_affected() > 0 {
+                    info!(
+                        "backfilled {} subscription token addresses on {}",
+                        result.rows_affected(),
+                        chain
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn stub_storage(&self) -> Option<&Arc<StubStorage>> {
@@ -82,7 +140,7 @@ impl Queries {
                 max_total_amount,
                 expiry,
                 nonce,
-                token,
+                token_address,
                 status,
                 executed_payments,
                 total_paid,
@@ -127,7 +185,7 @@ impl Queries {
             record.max_total_amount,
             record.expiry,
             record.nonce,
-            record.token,
+            record.token_address,
             record.status,
             record.executed_payments,
             record.total_paid,
@@ -175,7 +233,7 @@ impl Queries {
                 max_total_amount,
                 expiry,
                 nonce,
-                token,
+                token_address,
                 status,
                 executed_payments,
                 total_paid,
@@ -268,7 +326,7 @@ impl Queries {
                 max_total_amount,
                 expiry,
                 nonce,
-                token,
+                token_address,
                 status,
                 executed_payments,
                 total_paid,
@@ -344,7 +402,7 @@ impl Queries {
                 max_total_amount,
                 expiry,
                 nonce,
-                token,
+                token_address,
                 status,
                 executed_payments,
                 total_paid,
@@ -605,7 +663,8 @@ impl Queries {
                 status,
                 error_message,
                 executed_at,
-                chain
+                chain,
+                token_address
             ) VALUES (
                 $1,
                 $2,
@@ -620,7 +679,8 @@ impl Queries {
                 $11,
                 $12,
                 $13,
-                $14
+                $14,
+                $15
             )
             RETURNING id
             "#,
@@ -637,7 +697,8 @@ impl Queries {
             exec.status,
             exec.error_message,
             exec.executed_at,
-            exec.chain
+            exec.chain,
+            exec.token_address
         )
         .fetch_one(pool)
         .await?;
@@ -703,7 +764,8 @@ impl Queries {
                 e.chain,
                 e.nexus_attestation_id,
                 e.nexus_verified,
-                e.nexus_submitted_at
+                e.nexus_submitted_at,
+                e.token_address
             FROM executions e
             JOIN subscriptions s ON e.subscription_id = s.id
             WHERE s.merchant = $1
@@ -768,7 +830,8 @@ impl Queries {
                 chain,
                 nexus_attestation_id,
                 nexus_verified,
-                nexus_submitted_at
+                nexus_submitted_at,
+                token_address
             FROM executions
             WHERE subscription_id = $1
             ORDER BY payment_number ASC
@@ -1256,7 +1319,7 @@ impl Queries {
                 max_total_amount,
                 expiry,
                 nonce,
-                token,
+                token_address,
                 status,
                 executed_payments,
                 total_paid,
@@ -1399,8 +1462,8 @@ impl Queries {
                 subscription_id, relayer_address, payment_number, amount_paid,
                 protocol_fee, merchant_amount, transaction_hash, block_number,
                 gas_used, gas_price, status, executed_at, chain,
-                nexus_attestation_id, nexus_verified, nexus_submitted_at
-            ) VALUES ($1, '', $2, $3, $4, '', $5, $6, $7, $8, 'SUCCESS', $9, $10, $11, $12, $13)
+                nexus_attestation_id, nexus_verified, nexus_submitted_at, token_address
+            ) VALUES ($1, '', $2, $3, $4, '', $5, $6, $7, $8, 'SUCCESS', $9, $10, $11, $12, $13, $14)
             ",
         )
         .bind(&record.subscription_id)
@@ -1416,6 +1479,7 @@ impl Queries {
         .bind(&record.nexus_attestation_id)
         .bind(record.nexus_verified)
         .bind(&record.nexus_submitted_at)
+        .bind(record.token_address.as_deref())
         .execute(pool)
         .await?;
 
@@ -1585,6 +1649,7 @@ impl Queries {
                 nexus_attestation_id: record_clone.nexus_attestation_id.clone(),
                 nexus_verified: record_clone.nexus_verified,
                 nexus_submitted_at: record_clone.nexus_submitted_at,
+                token_address: record_clone.token_address.clone(),
             };
             storage.executions.lock().unwrap().push(execution_entry);
 
@@ -1616,7 +1681,7 @@ impl Queries {
                 max_total_amount,
                 expiry,
                 nonce,
-                token,
+                token_address,
                 status,
                 executed_payments,
                 total_paid,
@@ -1653,8 +1718,8 @@ impl Queries {
                 subscription_id, relayer_address, payment_number, amount_paid,
                 protocol_fee, merchant_amount, transaction_hash, block_number,
                 gas_used, gas_price, status, executed_at, chain,
-                nexus_attestation_id, nexus_verified, nexus_submitted_at
-            ) VALUES ($1, '', $2, $3, $4, '', $5, $6, $7, $8, 'SUCCESS', $9, $10, $11, $12, $13)
+                nexus_attestation_id, nexus_verified, nexus_submitted_at, token_address
+            ) VALUES ($1, '', $2, $3, $4, '', $5, $6, $7, $8, 'SUCCESS', $9, $10, $11, $12, $13, $14)
             ",
         )
         .bind(&execution_record.subscription_id)
@@ -1670,6 +1735,7 @@ impl Queries {
         .bind(&execution_record.nexus_attestation_id)
         .bind(execution_record.nexus_verified)
         .bind(&execution_record.nexus_submitted_at)
+        .bind(&current_subscription.token_address)
         .execute(&mut *tx)
         .await?;
 
@@ -1846,6 +1912,7 @@ impl Queries {
                 nexus_attestation_id: None,
                 nexus_verified: false,
                 nexus_submitted_at: None,
+                token_address: None,
             };
             let existing = records
                 .iter()
@@ -1877,9 +1944,10 @@ impl Queries {
                 chain,
                 nexus_attestation_id,
                 nexus_verified,
-                nexus_submitted_at
+                nexus_submitted_at,
+                token_address
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '0', '0', 'SUCCESS', $9, $10, NULL, false, NULL)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '0', '0', 'SUCCESS', $9, $10, NULL, false, NULL, NULL)
             ON CONFLICT (transaction_hash) DO NOTHING
             "#,
         )

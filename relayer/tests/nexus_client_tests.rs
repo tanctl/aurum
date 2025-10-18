@@ -9,6 +9,7 @@ fn sample_attestation() -> PaymentAttestation {
         payment_number: 1,
         amount: 42,
         merchant: [2u8; 20],
+        token_address: [4u8; 20],
         tx_hash: [3u8; 32],
         block_number: 100,
         timestamp: Utc::now().timestamp() as u64,
