@@ -23,6 +23,10 @@ pub fn create_api_routes(app_state: Arc<AppState>) -> Router {
             "/api/v1/verify-cross-chain",
             post(verify_cross_chain_handler),
         )
+        .route(
+            "/api/v1/cross-chain/:subscription_id",
+            get(get_cross_chain_attestations_handler),
+        )
         // health and status routes
         .route("/health", get(health_check_handler))
         .route("/status", get(status_check_handler))
@@ -100,6 +104,14 @@ pub async fn api_documentation_handler() -> axum::response::Html<&'static str> {
                 <p>Get aggregated statistics for a merchant</p>
                 <div class="example">
                     <strong>Example:</strong> <code>GET /api/v1/merchant/0x123.../stats</code>
+                </div>
+            </div>
+
+            <div class="endpoint">
+                <h3><span class="method get">GET</span> /api/v1/cross-chain/:subscription_id</h3>
+                <p>List Nexus attestations recorded for a subscription</p>
+                <div class="example">
+                    <strong>Example:</strong> <code>GET /api/v1/cross-chain/0x123...</code>
                 </div>
             </div>
             

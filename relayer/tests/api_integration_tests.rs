@@ -110,7 +110,7 @@ fn create_test_intent() -> SubscriptionIntent {
         max_total_amount: "12000000000000000000".to_string(), // 12 ETH
         expiry: now + (365 * 24 * 60 * 60),                   // 1 year
         nonce: 1,
-        token_address: "0x0000000000000000000000000000000000000000".to_string(),
+        token: "0x0000000000000000000000000000000000000000".to_string(),
     }
 }
 
@@ -300,8 +300,43 @@ async fn test_merchant_stats_valid_address() {
         .await
         .unwrap();
 
-    // may fail due to envio connection but should not be validation error
-    assert!(response.status().is_server_error() || response.status().is_success());
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let parsed: MerchantStatsResponse = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(parsed.merchant, merchant_address.to_lowercase());
+    assert_eq!(parsed.total.token_symbol, "TOTAL");
+    assert!(parsed.by_token.is_empty());
+}
+
+#[tokio::test]
+async fn test_cross_chain_attestations_endpoint() {
+    let app_state = create_test_app_state().await;
+    let app = relayer::api::ApiServer::create(app_state).await;
+
+    let subscription_id = "0x1234567890123456789012345678901234567890123456789012345678901234";
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/cross-chain/{}", subscription_id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let attestations: Vec<CrossChainAttestationResponse> = serde_json::from_slice(&body).unwrap();
+
+    assert!(attestations.is_empty());
 }
 
 #[tokio::test]

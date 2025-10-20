@@ -1,232 +1,242 @@
-import {
-  SubscriptionCreated,
-  SubscriptionPaused,
-  SubscriptionResumed,
-  SubscriptionCancelled,
-  PaymentExecuted,
-  PaymentFailed,
-} from "../generated/SubscriptionManager/SubscriptionManager";
-import {
-  RelayerRegistered,
-  RelayerUnregistered,
-  ExecutionRecorded,
-} from "../generated/RelayerRegistry/RelayerRegistry";
-import {
-  Subscription,
-  Payment,
-  MerchantStats,
-  RelayerStats,
-} from "../generated/schema";
-import { BigInt, Bytes } from "@graphprotocol/graph-ts";
+/*
+ * Please refer to https://docs.envio.dev for a thorough guide on all Envio indexer features
+ */
+import { RelayerRegistry, SubscriptionManager } from "generated";
 
-function buildId(prefix: Bytes, chainId: i32): string {
-  return prefix.toHexString().concat("-").concat(chainId.toString());
-}
+type HandlerArgs = {
+  event: any;
+  context: any;
+};
 
-function createMerchantStats(id: Bytes, chainId: i32): MerchantStats {
-  let stats = new MerchantStats(buildId(id, chainId));
-  stats.merchant = id;
-  stats.totalSubscriptions = 0;
-  stats.activeSubscriptions = 0;
-  stats.totalRevenue = BigInt.zero();
-  stats.totalPayments = 0;
-  stats.chainId = chainId;
-  stats.save();
-  return stats;
-}
+RelayerRegistry.EmergencySlash.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    relayer: event.params.relayer,
+    amount: event.params.amount,
+    reason: event.params.reason,
+  };
 
-function createRelayerStats(id: Bytes, chainId: i32): RelayerStats {
-  let stats = new RelayerStats(buildId(id, chainId));
-  stats.relayer = id;
-  stats.successfulExecutions = 0;
-  stats.failedExecutions = 0;
-  stats.totalFeesEarned = BigInt.zero();
-  stats.isActive = true;
-  stats.stakedAmount = BigInt.zero();
-  stats.chainId = chainId;
-  stats.save();
-  return stats;
-}
+  context.RelayerRegistry_EmergencySlash.set(entity);
+});
 
-export function handleSubscriptionCreated(event: SubscriptionCreated): void {
-  let chainId = event.transaction.chainId.toI32();
-  let subscriptionKey = buildId(event.params.subscriptionId, chainId);
-  let entity = new Subscription(subscriptionKey);
-  entity.subscriptionId = event.params.subscriptionId;
-  entity.subscriber = event.params.subscriber;
-  entity.merchant = event.params.merchant;
-  entity.token = event.params.token;
-  entity.amount = event.params.amount;
-  entity.interval = event.params.interval;
-  entity.startTime = event.block.timestamp;
-  entity.maxPayments = event.params.maxPayments.toI32();
-  entity.maxTotalAmount = event.params.maxTotalAmount;
-  entity.expiry = event.params.expiry;
-  entity.status = "ACTIVE";
-  entity.paymentsExecuted = 0;
-  entity.totalAmountPaid = BigInt.zero();
-  entity.createdAt = event.block.timestamp;
-  entity.createdAtBlock = event.block.number;
-  entity.chainId = chainId;
-  entity.save();
+RelayerRegistry.ExecutionRecorded.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    relayer: event.params.relayer,
+    success: event.params.success,
+    feeAmount: event.params.feeAmount,
+  };
 
-  let merchantId = buildId(event.params.merchant, chainId);
-  let stats = MerchantStats.load(merchantId);
-  if (stats == null) {
-    stats = createMerchantStats(event.params.merchant, chainId);
-  }
-  stats.totalSubscriptions += 1;
-  stats.activeSubscriptions += 1;
-  stats.save();
-}
+  context.RelayerRegistry_ExecutionRecorded.set(entity);
+});
 
-export function handleSubscriptionPaused(event: SubscriptionPaused): void {
-  let chainId = event.transaction.chainId.toI32();
-  let subscriptionKey = buildId(event.params.subscriptionId, chainId);
-  let entity = Subscription.load(subscriptionKey);
-  if (entity == null) {
-    return;
-  }
-  entity.status = "PAUSED";
-  entity.save();
+RelayerRegistry.OwnershipTransferred.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    previousOwner: event.params.previousOwner,
+    newOwner: event.params.newOwner,
+  };
 
-  let stats = MerchantStats.load(buildId(entity.merchant, chainId));
-  if (stats != null && stats.activeSubscriptions > 0) {
-    stats.activeSubscriptions -= 1;
-    stats.save();
-  }
-}
+  context.RelayerRegistry_OwnershipTransferred.set(entity);
+});
 
-export function handleSubscriptionResumed(event: SubscriptionResumed): void {
-  let chainId = event.transaction.chainId.toI32();
-  let subscriptionKey = buildId(event.params.subscriptionId, chainId);
-  let entity = Subscription.load(subscriptionKey);
-  if (entity == null) {
-    return;
-  }
-  entity.status = "ACTIVE";
-  entity.save();
+RelayerRegistry.RelayerRegistered.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    relayer: event.params.relayer,
+    stakedAmount: event.params.stakedAmount,
+  };
 
-  let stats = MerchantStats.load(buildId(entity.merchant, chainId));
-  if (stats == null) {
-    stats = createMerchantStats(entity.merchant, chainId);
-  }
-  stats.activeSubscriptions += 1;
-  stats.save();
-}
+  context.RelayerRegistry_RelayerRegistered.set(entity);
+});
 
-export function handleSubscriptionCancelled(event: SubscriptionCancelled): void {
-  let chainId = event.transaction.chainId.toI32();
-  let subscriptionKey = buildId(event.params.subscriptionId, chainId);
-  let entity = Subscription.load(subscriptionKey);
-  if (entity == null) {
-    return;
-  }
-  let wasActive = entity.status == "ACTIVE";
-  entity.status = "CANCELLED";
-  entity.save();
+RelayerRegistry.RelayerRestaked.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    relayer: event.params.relayer,
+    amount: event.params.amount,
+    newStake: event.params.newStake,
+  };
 
-  if (wasActive) {
-    let stats = MerchantStats.load(buildId(entity.merchant, chainId));
-    if (stats != null && stats.activeSubscriptions > 0) {
-      stats.activeSubscriptions -= 1;
-      stats.save();
-    }
-  }
-}
+  context.RelayerRegistry_RelayerRestaked.set(entity);
+});
 
-export function handlePaymentExecuted(event: PaymentExecuted): void {
-  let chainId = event.transaction.chainId.toI32();
-  let paymentId = event.transaction.hash
-    .toHexString()
-    .concat("-")
-    .concat(event.params.paymentNumber.toString());
-  let payment = new Payment(paymentId);
+RelayerRegistry.RelayerSlashed.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    relayer: event.params.relayer,
+    slashAmount: event.params.slashAmount,
+    remainingStake: event.params.remainingStake,
+  };
 
-  let subscriptionKey = buildId(event.params.subscriptionId, chainId);
-  let subscription = Subscription.load(subscriptionKey);
-  if (subscription == null) {
-    return;
-  }
+  context.RelayerRegistry_RelayerSlashed.set(entity);
+});
 
-  payment.subscription = subscription.id;
-  payment.paymentNumber = event.params.paymentNumber.toI32();
-  payment.amount = event.params.amount;
-  payment.fee = event.params.fee;
-  payment.relayer = event.params.relayer;
-  payment.token = event.params.token;
-  payment.txHash = event.transaction.hash;
-  payment.blockNumber = event.block.number;
-  payment.timestamp = event.block.timestamp;
-  payment.chainId = chainId;
-  payment.save();
+RelayerRegistry.RelayerUnregistered.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    relayer: event.params.relayer,
+    returnedStake: event.params.returnedStake,
+  };
 
-  subscription.paymentsExecuted += 1;
-  subscription.totalAmountPaid = subscription.totalAmountPaid.plus(event.params.amount);
-  subscription.save();
+  context.RelayerRegistry_RelayerUnregistered.set(entity);
+});
 
-  let stats = MerchantStats.load(buildId(subscription.merchant, chainId));
-  if (stats == null) {
-    stats = createMerchantStats(subscription.merchant, chainId);
-  }
-  stats.totalPayments += 1;
-  stats.totalRevenue = stats.totalRevenue.plus(event.params.amount);
-  stats.save();
+RelayerRegistry.SlashingParametersUpdated.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    slashAmount: event.params.slashAmount,
+    failureThreshold: event.params.failureThreshold,
+  };
 
-  let relayer = RelayerStats.load(buildId(event.params.relayer, chainId));
-  if (relayer == null) {
-    relayer = createRelayerStats(event.params.relayer, chainId);
-  }
-  relayer.successfulExecutions += 1;
-  relayer.totalFeesEarned = relayer.totalFeesEarned.plus(event.params.fee);
-  relayer.save();
-}
+  context.RelayerRegistry_SlashingParametersUpdated.set(entity);
+});
 
-export function handlePaymentFailed(event: PaymentFailed): void {
-  let chainId = event.transaction.chainId.toI32();
-  let relayerAddress = event.transaction.from;
-  let relayer = RelayerStats.load(buildId(relayerAddress, chainId));
-  if (relayer == null) {
-    return;
-  }
-  relayer.failedExecutions += 1;
-  relayer.save();
-}
+RelayerRegistry.WithdrawalRequested.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    relayer: event.params.relayer,
+    requestTime: event.params.requestTime,
+  };
 
-export function handleRelayerRegistered(event: RelayerRegistered): void {
-  let chainId = event.transaction.chainId.toI32();
-  let relayer = RelayerStats.load(buildId(event.params.relayer, chainId));
-  if (relayer == null) {
-    relayer = createRelayerStats(event.params.relayer, chainId);
-  }
-  relayer.isActive = true;
-  relayer.stakedAmount = event.params.stakedAmount;
-  relayer.save();
-}
+  context.RelayerRegistry_WithdrawalRequested.set(entity);
+});
 
-export function handleRelayerUnregistered(event: RelayerUnregistered): void {
-  let chainId = event.transaction.chainId.toI32();
-  let relayer = RelayerStats.load(buildId(event.params.relayer, chainId));
-  if (relayer == null) {
-    return;
-  }
-  relayer.isActive = false;
-  relayer.stakedAmount = BigInt.zero();
-  relayer.save();
-}
+SubscriptionManager.CrossChainPaymentInitiated.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    subscriptionId: event.params.subscriptionId,
+    subscriber: event.params.subscriber,
+    subscriberToken: event.params.subscriberToken,
+    sourceChainId: event.params.sourceChainId,
+    targetChainId: event.params.targetChainId,
+    amount: event.params.amount,
+  };
 
-export function handleExecutionRecorded(event: ExecutionRecorded): void {
-  let chainId = event.transaction.chainId.toI32();
-  let relayer = RelayerStats.load(buildId(event.params.relayer, chainId));
-  if (relayer == null) {
-    relayer = createRelayerStats(event.params.relayer, chainId);
-  }
+  context.SubscribtionManager_CrossChainPaymentInitiated.set(entity);
+});
 
-  if (event.params.success) {
-    relayer.successfulExecutions += 1;
-    relayer.totalFeesEarned = relayer.totalFeesEarned.plus(event.params.feeAmount);
-  } else {
-    relayer.failedExecutions += 1;
-  }
-  relayer.save();
-}
+SubscriptionManager.NexusAttestationSubmitted.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    subscriptionId: event.params.subscriptionId,
+    paymentNumber: event.params.paymentNumber,
+    attestationId: event.params.attestationId,
+  };
+
+  context.SubscribtionManager_NexusAttestationSubmitted.set(entity);
+});
+
+SubscriptionManager.NexusAttestationVerified.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    attestationId: event.params.attestationId,
+  };
+
+  context.SubscribtionManager_NexusAttestationVerified.set(entity);
+});
+
+SubscriptionManager.OwnershipTransferred.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    previousOwner: event.params.previousOwner,
+    newOwner: event.params.newOwner,
+  };
+
+  context.SubscribtionManager_OwnershipTransferred.set(entity);
+});
+
+SubscriptionManager.PaymentExecuted.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    subscriptionId: event.params.subscriptionId,
+    subscriber: event.params.subscriber,
+    merchant: event.params.merchant,
+    token: event.params.token,
+    paymentNumber: event.params.paymentNumber,
+    amount: event.params.amount,
+    fee: event.params.fee,
+    relayer: event.params.relayer,
+  };
+
+  context.SubscribtionManager_PaymentExecuted.set(entity);
+});
+
+SubscriptionManager.PaymentFailed.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    subscriptionId: event.params.subscriptionId,
+    subscriber: event.params.subscriber,
+    merchant: event.params.merchant,
+    amount: event.params.amount,
+    reason: event.params.reason,
+  };
+
+  context.SubscribtionManager_PaymentFailed.set(entity);
+});
+
+SubscriptionManager.SubscriptionCancelled.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    subscriptionId: event.params.subscriptionId,
+    subscriber: event.params.subscriber,
+    merchant: event.params.merchant,
+  };
+
+  context.SubscribtionManager_SubscriptionCancelled.set(entity);
+});
+
+SubscriptionManager.SubscriptionCreated.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    subscriptionId: event.params.subscriptionId,
+    subscriber: event.params.subscriber,
+    merchant: event.params.merchant,
+    token: event.params.token,
+    amount: event.params.amount,
+    interval: event.params.interval,
+    maxPayments: event.params.maxPayments,
+    maxTotalAmount: event.params.maxTotalAmount,
+    expiry: event.params.expiry,
+  };
+
+  context.SubscribtionManager_SubscriptionCreated.set(entity);
+});
+
+SubscriptionManager.SubscriptionPaused.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    subscriptionId: event.params.subscriptionId,
+    subscriber: event.params.subscriber,
+  };
+
+  context.SubscribtionManager_SubscriptionPaused.set(entity);
+});
+
+SubscriptionManager.SubscriptionResumed.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    subscriptionId: event.params.subscriptionId,
+    subscriber: event.params.subscriber,
+  };
+
+  context.SubscribtionManager_SubscriptionResumed.set(entity);
+});
+
+SubscriptionManager.TokenAdded.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    token: event.params.token,
+  };
+
+  context.SubscribtionManager_TokenAdded.set(entity);
+});
+
+SubscriptionManager.TokenRemoved.handler(async ({ event, context }: HandlerArgs) => {
+  const entity = {
+    id: `${event.chainId}_${event.block.number}_${event.logIndex}`,
+    token: event.params.token,
+  };
+
+  context.SubscribtionManager_TokenRemoved.set(entity);
+});

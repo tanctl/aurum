@@ -31,18 +31,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  status: {}", subscription.status);
 
             let balance = client
-                .check_balance(
-                    subscription.subscriber,
-                    subscription.token_address,
-                    "sepolia",
-                )
+                .check_balance(subscription.subscriber, subscription.token, "sepolia")
                 .await?;
             println!("  subscriber balance: {}", balance);
 
             let has_allowance = client
                 .check_allowance(
                     subscription.subscriber,
-                    subscription.token_address,
+                    subscription.token,
                     subscription.amount,
                     "sepolia",
                 )

@@ -1,113 +1,51 @@
-name: aurum-hyperindex
-version: 1
-
+# yaml-language-server: $schema=./node_modules/envio/evm.schema.json
+name: envio-indexer
+contracts:
+- name: RelayerRegistry
+  handler: src/EventHandlers.ts
+  events:
+  - event: EmergencySlash(address indexed relayer, uint256 amount, string reason)
+  - event: ExecutionRecorded(address indexed relayer, bool success, uint256 feeAmount)
+  - event: OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
+  - event: RelayerRegistered(address indexed relayer, uint256 stakedAmount)
+  - event: RelayerRestaked(address indexed relayer, uint256 amount, uint256 newStake)
+  - event: RelayerSlashed(address indexed relayer, uint256 slashAmount, uint256 remainingStake)
+  - event: RelayerUnregistered(address indexed relayer, uint256 returnedStake)
+  - event: SlashingParametersUpdated(uint256 slashAmount, uint256 failureThreshold)
+  - event: WithdrawalRequested(address indexed relayer, uint256 requestTime)
+- name: SubscriptionManager
+  handler: src/EventHandlers.ts
+  events:
+  - event: CrossChainPaymentInitiated(bytes32 indexed subscriptionId, address indexed subscriber, address subscriberToken, uint256 sourceChainId, uint256 targetChainId, uint256 amount)
+  - event: NexusAttestationSubmitted(bytes32 indexed subscriptionId, uint256 indexed paymentNumber, string attestationId)
+  - event: NexusAttestationVerified(string indexed attestationId)
+  - event: OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
+  - event: PaymentExecuted(bytes32 indexed subscriptionId, address indexed subscriber, address indexed merchant, address token, uint256 paymentNumber, uint256 amount, uint256 fee, address relayer)
+  - event: PaymentFailed(bytes32 indexed subscriptionId, address indexed subscriber, address indexed merchant, uint256 amount, string reason)
+  - event: SubscriptionCancelled(bytes32 indexed subscriptionId, address indexed subscriber, address indexed merchant)
+  - event: SubscriptionCreated(bytes32 indexed subscriptionId, address indexed subscriber, address indexed merchant, address token, uint256 amount, uint256 interval, uint256 maxPayments, uint256 maxTotalAmount, uint256 expiry)
+  - event: SubscriptionPaused(bytes32 indexed subscriptionId, address indexed subscriber)
+  - event: SubscriptionResumed(bytes32 indexed subscriptionId, address indexed subscriber)
+  - event: TokenAdded(address indexed token)
+  - event: TokenRemoved(address indexed token)
 networks:
-  sepolia:
-    chainId: 11155111
-    rpc:
-      url: ${SEPOLIA_RPC_URL}
-  baseSepolia:
-    chainId: 84532
-    rpc:
-      url: ${BASE_SEPOLIA_RPC_URL}
-
-dataSources:
-  - name: subscriptionManagerSepolia
-    kind: ethereum/contract
-    network: sepolia
-    source:
-      address: ${SUBSCRIPTION_MANAGER_ADDRESS_SEPOLIA}
-      abi: SubscriptionManager
-      startBlock: ${SUBSCRIPTION_MANAGER_START_BLOCK_SEPOLIA}
-    mapping:
-      file: ./src/EventHandlers.ts
-      entities:
-        - Subscription
-        - Payment
-        - MerchantStats
-        - RelayerStats
-      eventHandlers:
-        - event: SubscriptionCreated(bytes32,address,address,uint256,uint256,uint256,uint256,uint256)
-          handler: handleSubscriptionCreated
-        - event: SubscriptionPaused(bytes32,address)
-          handler: handleSubscriptionPaused
-        - event: SubscriptionResumed(bytes32,address)
-          handler: handleSubscriptionResumed
-        - event: SubscriptionCancelled(bytes32,address,address)
-          handler: handleSubscriptionCancelled
-        - event: PaymentExecuted(bytes32,address,address,uint256,uint256,uint256,address)
-          handler: handlePaymentExecuted
-        - event: PaymentFailed(bytes32,address,address,uint256,string)
-          handler: handlePaymentFailed
-
-  - name: subscriptionManagerBaseSepolia
-    kind: ethereum/contract
-    network: baseSepolia
-    source:
-      address: ${SUBSCRIPTION_MANAGER_ADDRESS_BASE}
-      abi: SubscriptionManager
-      startBlock: ${SUBSCRIPTION_MANAGER_START_BLOCK_BASE}
-    mapping:
-      file: ./src/EventHandlers.ts
-      entities:
-        - Subscription
-        - Payment
-        - MerchantStats
-        - RelayerStats
-      eventHandlers:
-        - event: SubscriptionCreated(bytes32,address,address,uint256,uint256,uint256,uint256,uint256)
-          handler: handleSubscriptionCreated
-        - event: SubscriptionPaused(bytes32,address)
-          handler: handleSubscriptionPaused
-        - event: SubscriptionResumed(bytes32,address)
-          handler: handleSubscriptionResumed
-        - event: SubscriptionCancelled(bytes32,address,address)
-          handler: handleSubscriptionCancelled
-        - event: PaymentExecuted(bytes32,address,address,uint256,uint256,uint256,address)
-          handler: handlePaymentExecuted
-        - event: PaymentFailed(bytes32,address,address,uint256,string)
-          handler: handlePaymentFailed
-
-  - name: relayerRegistrySepolia
-    kind: ethereum/contract
-    network: sepolia
-    source:
-      address: ${RELAYER_REGISTRY_ADDRESS_SEPOLIA}
-      abi: RelayerRegistry
-      startBlock: ${RELAYER_REGISTRY_START_BLOCK_SEPOLIA}
-    mapping:
-      file: ./src/EventHandlers.ts
-      entities:
-        - RelayerStats
-      eventHandlers:
-        - event: RelayerRegistered(address,uint256)
-          handler: handleRelayerRegistered
-        - event: RelayerUnregistered(address,uint256)
-          handler: handleRelayerUnregistered
-        - event: ExecutionRecorded(address,bool,uint256)
-          handler: handleExecutionRecorded
-
-  - name: relayerRegistryBaseSepolia
-    kind: ethereum/contract
-    network: baseSepolia
-    source:
-      address: ${RELAYER_REGISTRY_ADDRESS_BASE}
-      abi: RelayerRegistry
-      startBlock: ${RELAYER_REGISTRY_START_BLOCK_BASE}
-    mapping:
-      file: ./src/EventHandlers.ts
-      entities:
-        - RelayerStats
-      eventHandlers:
-        - event: RelayerRegistered(address,uint256)
-          handler: handleRelayerRegistered
-        - event: RelayerUnregistered(address,uint256)
-          handler: handleRelayerUnregistered
-        - event: ExecutionRecorded(address,bool,uint256)
-          handler: handleExecutionRecorded
-
-abis:
-  - name: SubscriptionManager
-    file: ../artifacts/contracts/SubscriptionManager.sol/SubscriptionManager.json
+- id: 84532
+  start_block: 0
+  contracts:
   - name: RelayerRegistry
-    file: ../artifacts/contracts/RelayerRegistry.sol/RelayerRegistry.json
+    address:
+    - 0xD05DbfD9a66d9B388B513902c4F717B9C5E75Dd2
+  - name: SubscriptionManager
+    address:
+    - 0x34b058f0870Bc58E1EE82a656985766738B5cD69
+- id: 11155111
+  start_block: 0
+  contracts:
+  - name: SubscriptionManager
+    address:
+    - 0xb351Ee33129F1e3d995FE546a747F67B55fA8A17
+  - name: RelayerRegistry
+    address:
+    - 0x0aEE7395C351607954d193FC719C2648f597BD6c
+unordered_multichain_mode: true
+preload_handlers: true

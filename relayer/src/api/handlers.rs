@@ -15,6 +15,7 @@ use tracing::{debug, info, warn};
 use super::types::*;
 use super::validation::ValidationService;
 use crate::database::models::{IntentCache, Subscription};
+use crate::integrations::envio::TokenStats;
 use crate::integrations::hypersync::{HyperSyncClient, RawPaymentEvent};
 use crate::metrics::MetricsSnapshot;
 use crate::utils::tokens;
@@ -545,47 +546,39 @@ pub async fn get_merchant_stats_handler(
         .get_merchant_stats(&merchant_address)
         .await?;
 
-    let (stats_response, explorer_url) = if let Some(data) = stats {
-        let response = MerchantStatsResponse {
-            merchant: data.merchant.clone(),
-            total_revenue: data.total_revenue.clone(),
-            total_transactions: data.total_payments as u64,
-            active_subscriptions: data.active_subscriptions as u64,
-            total_subscriptions: data.total_subscriptions as u64,
-            average_transaction_value: calculate_average_transaction_value(
-                &data.total_revenue,
-                data.total_payments,
-            ),
-            first_transaction_date: None,
-            last_transaction_date: None,
-            monthly_revenue: Vec::new(),
-            envio_explorer_url: app_state
-                .envio_client
-                .build_explorer_url("merchants", &data.merchant)
-                .unwrap_or_else(|| "https://explorer.envio.dev".to_string()),
-        };
-        (response.clone(), response.envio_explorer_url.clone())
+    let explorer_url = app_state
+        .envio_client
+        .build_explorer_url("merchants", &merchant_address.to_lowercase())
+        .unwrap_or_else(|| "https://explorer.envio.dev".to_string());
+
+    let stats_response = if let Some(data) = stats {
+        let mut by_token: HashMap<String, TokenStatsResponse> = HashMap::new();
+        for (token, token_stats) in data.by_token.iter() {
+            by_token.insert(token.clone(), token_stats_to_response(token_stats));
+        }
+
+        MerchantStatsResponse {
+            merchant: data.merchant,
+            total: token_stats_to_response(&data.total),
+            by_token,
+            envio_explorer_url: explorer_url.clone(),
+        }
     } else {
-        let address = merchant_address.to_lowercase();
-        let explorer = app_state
-            .envio_client
-            .build_explorer_url("merchants", &address)
-            .unwrap_or_else(|| "https://explorer.envio.dev".to_string());
-        (
-            MerchantStatsResponse {
-                merchant: address.clone(),
-                total_revenue: "0".to_string(),
-                total_transactions: 0,
-                active_subscriptions: 0,
+        MerchantStatsResponse {
+            merchant: merchant_address.to_lowercase(),
+            total: TokenStatsResponse {
+                token_address: "aggregate".to_string(),
+                token_symbol: "TOTAL".to_string(),
                 total_subscriptions: 0,
+                active_subscriptions: 0,
+                total_revenue: "0".to_string(),
+                total_payments: 0,
                 average_transaction_value: "0".to_string(),
-                first_transaction_date: None,
-                last_transaction_date: None,
-                monthly_revenue: Vec::new(),
-                envio_explorer_url: explorer.clone(),
+                chain_id: 0,
             },
-            explorer,
-        )
+            by_token: HashMap::new(),
+            envio_explorer_url: explorer_url.clone(),
+        }
     };
 
     info!(
@@ -639,6 +632,42 @@ pub async fn verify_cross_chain_handler(
     }
 
     Ok(Json(response))
+}
+
+pub async fn get_cross_chain_attestations_handler(
+    Path(subscription_id): Path<String>,
+    State(app_state): State<Arc<AppState>>,
+) -> Result<Json<Vec<CrossChainAttestationResponse>>> {
+    info!(
+        "fetching cross-chain attestations for subscription {}",
+        subscription_id
+    );
+
+    ValidationService::validate_subscription_id_format(&subscription_id)?;
+
+    let attestations = app_state
+        .envio_client
+        .get_cross_chain_attestations(&subscription_id)
+        .await?;
+
+    let responses = attestations
+        .into_iter()
+        .map(|record| CrossChainAttestationResponse {
+            attestation_id: record.id,
+            subscription_id: record.subscription_id,
+            payment_number: record.payment_number.max(0) as u64,
+            source_chain_id: record.source_chain_id.max(0) as u64,
+            token: tokens::normalize_token_address(&record.token),
+            amount: record.amount,
+            merchant: record.merchant,
+            tx_hash: record.tx_hash,
+            block_number: record.block_number.max(0) as u64,
+            timestamp: record.timestamp.max(0) as u64,
+            verified: record.verified,
+        })
+        .collect();
+
+    Ok(Json(responses))
 }
 
 // get /health
@@ -804,6 +833,19 @@ pub async fn status_check_handler(
     Ok(Json(status_response))
 }
 
+fn token_stats_to_response(stats: &TokenStats) -> TokenStatsResponse {
+    TokenStatsResponse {
+        token_address: stats.token_address.clone(),
+        token_symbol: stats.token_symbol.clone(),
+        total_subscriptions: stats.total_subscriptions,
+        active_subscriptions: stats.active_subscriptions,
+        total_revenue: stats.total_revenue.clone(),
+        total_payments: stats.total_payments,
+        average_transaction_value: stats.average_transaction_value.clone(),
+        chain_id: stats.chain_id,
+    }
+}
+
 fn subscription_hex_to_bytes(id: &str) -> Result<[u8; 32]> {
     if !id.starts_with("0x") || id.len() != 66 {
         return Err(RelayerError::Validation(
@@ -825,19 +867,4 @@ pub async fn metrics_handler(
 ) -> Result<Json<MetricsSnapshot>> {
     let snapshot = app_state.metrics.snapshot();
     Ok(Json(snapshot))
-}
-
-fn calculate_average_transaction_value(total_revenue: &str, total_payments: i64) -> String {
-    if total_payments <= 0 {
-        return "0".to_string();
-    }
-
-    match U256::from_dec_str(total_revenue) {
-        Ok(revenue) => {
-            let payments = U256::from(total_payments as u64);
-            let average = revenue / payments;
-            average.to_string()
-        }
-        Err(_) => "0".to_string(),
-    }
 }

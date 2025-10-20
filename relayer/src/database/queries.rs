@@ -45,6 +45,7 @@ impl Queries {
     pub async fn backfill_legacy_token_addresses(&self, config: &Config) -> Result<()> {
         const ZERO_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
 
+        // backfills older rows so new token-aware logic works for historical subscriptions
         if let Some(storage) = self.stub_storage() {
             let mut subscriptions = storage.subscriptions.lock().unwrap();
             for subscription in subscriptions.values_mut() {

@@ -1,54 +1,149 @@
-type Subscription @entity {
+type RelayerRegistry_EmergencySlash {
   id: ID!
-  subscriptionId: Bytes!
-  subscriber: Bytes!
-  merchant: Bytes!
-  token: Bytes!
+  relayer: String!
   amount: BigInt!
-  interval: BigInt!
-  startTime: BigInt!
-  maxPayments: Int!
-  maxTotalAmount: BigInt!
-  expiry: BigInt!
-  status: String!
-  paymentsExecuted: Int!
-  totalAmountPaid: BigInt!
-  createdAt: BigInt!
-  createdAtBlock: BigInt!
-  chainId: Int!
+  reason: String!
 }
 
-type Payment @entity {
+type RelayerRegistry_ExecutionRecorded {
   id: ID!
-  subscription: Subscription!
-  paymentNumber: Int!
+  relayer: String!
+  success: Boolean!
+  feeAmount: BigInt!
+}
+
+type RelayerRegistry_OwnershipTransferred {
+  id: ID!
+  previousOwner: String!
+  newOwner: String!
+}
+
+type RelayerRegistry_RelayerRegistered {
+  id: ID!
+  relayer: String!
+  stakedAmount: BigInt!
+}
+
+type RelayerRegistry_RelayerRestaked {
+  id: ID!
+  relayer: String!
+  amount: BigInt!
+  newStake: BigInt!
+}
+
+type RelayerRegistry_RelayerSlashed {
+  id: ID!
+  relayer: String!
+  slashAmount: BigInt!
+  remainingStake: BigInt!
+}
+
+type RelayerRegistry_RelayerUnregistered {
+  id: ID!
+  relayer: String!
+  returnedStake: BigInt!
+}
+
+type RelayerRegistry_SlashingParametersUpdated {
+  id: ID!
+  slashAmount: BigInt!
+  failureThreshold: BigInt!
+}
+
+type RelayerRegistry_WithdrawalRequested {
+  id: ID!
+  relayer: String!
+  requestTime: BigInt!
+}
+
+type SubscribtionManager_CrossChainPaymentInitiated {
+  id: ID!
+  subscriptionId: String!
+  subscriber: String!
+  subscriberToken: String!
+  sourceChainId: BigInt!
+  targetChainId: BigInt!
+  amount: BigInt!
+}
+
+type SubscribtionManager_NexusAttestationSubmitted {
+  id: ID!
+  subscriptionId: String!
+  paymentNumber: BigInt!
+  attestationId: String!
+}
+
+type SubscribtionManager_NexusAttestationVerified {
+  id: ID!
+  attestationId: String!
+}
+
+type SubscribtionManager_OwnershipTransferred {
+  id: ID!
+  previousOwner: String!
+  newOwner: String!
+}
+
+type SubscribtionManager_PaymentExecuted {
+  id: ID!
+  subscriptionId: String!
+  subscriber: String!
+  merchant: String!
+  token: String!
+  paymentNumber: BigInt!
   amount: BigInt!
   fee: BigInt!
-  relayer: Bytes!
-  token: Bytes!
-  txHash: Bytes!
-  blockNumber: BigInt!
-  timestamp: BigInt!
-  chainId: Int!
+  relayer: String!
 }
 
-type MerchantStats @entity {
+type SubscribtionManager_PaymentFailed {
   id: ID!
-  merchant: Bytes!
-  totalSubscriptions: Int!
-  activeSubscriptions: Int!
-  totalRevenue: BigInt!
-  totalPayments: Int!
-  chainId: Int!
+  subscriptionId: String!
+  subscriber: String!
+  merchant: String!
+  amount: BigInt!
+  reason: String!
 }
 
-type RelayerStats @entity {
+type SubscribtionManager_SubscriptionCancelled {
   id: ID!
-  relayer: Bytes!
-  successfulExecutions: Int!
-  failedExecutions: Int!
-  totalFeesEarned: BigInt!
-  isActive: Boolean!
-  stakedAmount: BigInt!
-  chainId: Int!
+  subscriptionId: String!
+  subscriber: String!
+  merchant: String!
 }
+
+type SubscribtionManager_SubscriptionCreated {
+  id: ID!
+  subscriptionId: String!
+  subscriber: String!
+  merchant: String!
+  token: String!
+  amount: BigInt!
+  interval: BigInt!
+  maxPayments: BigInt!
+  maxTotalAmount: BigInt!
+  expiry: BigInt!
+}
+
+type SubscribtionManager_SubscriptionPaused {
+  id: ID!
+  subscriptionId: String!
+  subscriber: String!
+}
+
+type SubscribtionManager_SubscriptionResumed {
+  id: ID!
+  subscriptionId: String!
+  subscriber: String!
+}
+
+type SubscribtionManager_TokenAdded {
+  id: ID!
+  token: String!
+}
+
+type SubscribtionManager_TokenRemoved {
+  id: ID!
+  token: String!
+}
+

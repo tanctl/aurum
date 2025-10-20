@@ -24,6 +24,7 @@ fn is_pyusd(address: &str) -> bool {
 }
 
 pub fn register_pyusd_addresses(addresses: &[String]) {
+    // keeps the pyusd registry aligned with config so symbol detection stays predictable
     let mut guard = PYUSD_ADDRESSES
         .write()
         .expect("pyusd address registry poisoned");
@@ -55,5 +56,15 @@ pub fn normalize_token_address(address: &str) -> String {
 }
 
 pub fn format_token_amount(amount: U256, decimals: u8) -> String {
-    format_units(amount, decimals as i32).unwrap_or_else(|_| amount.to_string())
+    let raw = format_units(amount, decimals as i32).unwrap_or_else(|_| amount.to_string());
+    if raw.contains('.') {
+        let trimmed = raw.trim_end_matches('0').trim_end_matches('.');
+        if trimmed.is_empty() {
+            "0".to_string()
+        } else {
+            trimmed.to_string()
+        }
+    } else {
+        raw
+    }
 }
