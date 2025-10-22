@@ -172,7 +172,7 @@ pub async fn submit_intent_handler(
         expiry: chrono::DateTime::from_timestamp(request.intent.expiry as i64, 0)
             .ok_or_else(|| RelayerError::Validation("invalid expiry time".to_string()))?,
         nonce: request.intent.nonce as i64,
-        token_address: token_address,
+        token_address,
         status: "ACTIVE".to_string(),
         executed_payments: 0,
         total_paid: "0".to_string(),

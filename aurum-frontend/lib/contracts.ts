@@ -8,8 +8,7 @@ import type { SupportedChainId } from "@/lib/wagmi";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 
-function envAddress(key: string): Address {
-  const value = process.env[key];
+function envAddress(value: string | undefined): Address {
   if (!value || value.trim() === "") {
     return ZERO_ADDRESS;
   }
@@ -20,13 +19,13 @@ export const SUBSCRIPTION_MANAGER_ABI = subscriptionManagerArtifact.abi as Abi;
 export const ERC20_ABI = erc20Artifact.abi as Abi;
 
 export const SUBSCRIPTION_MANAGER_ADDRESSES: Record<SupportedChainId, Address> = {
-  11155111: envAddress("NEXT_PUBLIC_SUBSCRIPTION_MANAGER_SEPOLIA"),
-  84532: envAddress("NEXT_PUBLIC_SUBSCRIPTION_MANAGER_BASE"),
+  11155111: envAddress(process.env.NEXT_PUBLIC_SUBSCRIPTION_MANAGER_SEPOLIA),
+  84532: envAddress(process.env.NEXT_PUBLIC_SUBSCRIPTION_MANAGER_BASE),
 };
 
 export const PYUSD_ADDRESSES: Record<SupportedChainId, Address> = {
-  11155111: envAddress("NEXT_PUBLIC_PYUSD_SEPOLIA"),
-  84532: envAddress("NEXT_PUBLIC_PYUSD_BASE"),
+  11155111: envAddress(process.env.NEXT_PUBLIC_PYUSD_SEPOLIA),
+  84532: envAddress(process.env.NEXT_PUBLIC_PYUSD_BASE),
 };
 
 type SubscriptionManagerReadParams = Omit<

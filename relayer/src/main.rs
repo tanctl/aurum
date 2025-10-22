@@ -162,18 +162,15 @@ async fn main() -> Result<()> {
         pool: app_state.database.expect_pool().clone(),
     };
 
-    let scheduler = Scheduler::new(scheduler_context).await.map_err(|e| {
+    let mut scheduler = Scheduler::new(scheduler_context).await.map_err(|e| {
         error!("failed to initialize scheduler: {}", e);
         e
     })?;
 
-    // start scheduler in background
-    let scheduler_handle = tokio::spawn(async move {
-        info!("starting payment scheduler");
-        if let Err(e) = scheduler.start().await {
-            error!("scheduler error: {}", e);
-        }
-    });
+    scheduler.start().await.map_err(|e| {
+        error!("failed to start scheduler: {}", e);
+        e
+    })?;
 
     // initialize API server
     let api_router = ApiServer::create(app_state.clone()).await;
@@ -210,11 +207,6 @@ async fn main() -> Result<()> {
         _ = signal::ctrl_c() => {
             info!("received shutdown signal, stopping services...");
         }
-        result = scheduler_handle => {
-            if let Err(e) = result {
-                error!("scheduler task failed: {}", e);
-            }
-        }
         result = api_handle => {
             if let Err(e) = result {
                 error!("API server task failed: {}", e);
@@ -224,6 +216,9 @@ async fn main() -> Result<()> {
 
     // graceful shutdown
     info!("shutting down services gracefully...");
+    if let Err(e) = scheduler.stop().await {
+        error!("failed to stop scheduler cleanly: {}", e);
+    }
     // Note: scheduler handles shutdown when the main task ends
 
     info!("aurum relayer service stopped successfully");

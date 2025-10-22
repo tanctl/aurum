@@ -66,12 +66,13 @@ export function Header({ showDashboardControls }: HeaderProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const isDashboardRoute = pathname?.startsWith("/dashboard") ?? false;
+  const isSubscribeRoute = pathname === "/subscribe";
   const explicitProp = typeof showDashboardControls === "boolean";
   const shouldShowDashboardControls = explicitProp
     ? showDashboardControls
-    : isDashboardRoute;
+    : isDashboardRoute || isSubscribeRoute;
 
-  if (isDashboardRoute && !explicitProp) {
+  if ((isDashboardRoute || isSubscribeRoute) && !explicitProp) {
     return null;
   }
 
@@ -85,7 +86,7 @@ export function Header({ showDashboardControls }: HeaderProps) {
           className="flex items-center gap-2 text-lg font-semibold text-primary transition-colors hover:text-secondary"
           onClick={closeMenu}
         >
-          <Image src="/favicon.png" alt="Aurum icon" width={28} height={28} className="h-7 w-7" />
+          <Image src="/favicon.png" alt="Aurum icon" width={28} height={28} className="h-7 w-7" priority />
           <span className="hidden sm:inline">Aurum</span>
         </Link>
 

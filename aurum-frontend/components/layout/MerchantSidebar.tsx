@@ -44,10 +44,10 @@ export function MerchantSidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm text-text-primary transition-colors ${
+              className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm ${
                 active
-                  ? "bg-carbon/50 text-primary"
-                  : "hover:bg-carbon/40 hover:text-text-primary"
+                  ? "bg-[#c9a961]/70 text-text-primary"
+                  : "text-text-primary"
               }`}
             >
               <Icon size={16} />

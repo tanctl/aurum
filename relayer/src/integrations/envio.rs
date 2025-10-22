@@ -200,14 +200,16 @@ impl EnvioClient {
         merchant_address: &str,
     ) -> Result<Option<MerchantStatsData>> {
         match &self.mode {
-            EnvioClientMode::Stub => {
-                let mut stats = MerchantStatsData::default();
-                stats.merchant = merchant_address.to_lowercase();
-                stats.total.token_address = "aggregate".to_string();
-                stats.total.token_symbol = "TOTAL".to_string();
-                stats.total.total_revenue = "0".to_string();
-                Ok(Some(stats))
-            }
+            EnvioClientMode::Stub => Ok(Some(MerchantStatsData {
+                merchant: merchant_address.to_lowercase(),
+                total: TokenStats {
+                    token_address: "aggregate".to_string(),
+                    token_symbol: "TOTAL".to_string(),
+                    total_revenue: "0".to_string(),
+                    ..TokenStats::default()
+                },
+                ..MerchantStatsData::default()
+            })),
             EnvioClientMode::Remote(remote) => remote.get_merchant_stats(merchant_address).await,
         }
     }
@@ -450,13 +452,11 @@ impl RemoteEnvioClient {
             return Ok(None);
         }
 
-        let mut stats = MerchantStatsData::default();
-        stats.merchant = merchant_lower;
-
         let mut totals_subscriptions: u64 = 0;
         let mut totals_active: u64 = 0;
         let mut totals_payments: u64 = 0;
         let mut totals_revenue = U256::zero();
+        let mut by_token: HashMap<String, TokenStats> = HashMap::new();
 
         for row in rows {
             let token_address = tokens::normalize_token_address(&row.token);
@@ -486,12 +486,12 @@ impl RemoteEnvioClient {
                 chain_id: row.chain_id,
             };
 
-            stats.by_token.insert(token_address, token_stats);
+            by_token.insert(token_address, token_stats);
         }
 
         let total_average = compute_average_value(&totals_revenue.to_string(), totals_payments);
 
-        stats.total = TokenStats {
+        let total_stats = TokenStats {
             token_address: "aggregate".to_string(),
             token_symbol: "TOTAL".to_string(),
             total_subscriptions: totals_subscriptions,
@@ -502,7 +502,11 @@ impl RemoteEnvioClient {
             chain_id: 0,
         };
 
-        Ok(Some(stats))
+        Ok(Some(MerchantStatsData {
+            merchant: merchant_lower,
+            total: total_stats,
+            by_token,
+        }))
     }
 
     async fn get_subscription_by_id(
