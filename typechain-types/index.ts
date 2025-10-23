@@ -32,9 +32,9 @@ export type { ReentrancyGuard } from "./@openzeppelin/contracts/utils/Reentrancy
 export { ReentrancyGuard__factory } from "./factories/@openzeppelin/contracts/utils/ReentrancyGuard__factory";
 export type { ICrossChainBridge } from "./contracts/interfaces/ICrossChainBridge";
 export { ICrossChainBridge__factory } from "./factories/contracts/interfaces/ICrossChainBridge__factory";
-export type { MockPYUSD } from "./contracts/MockPYUSD";
-export { MockPYUSD__factory } from "./factories/contracts/MockPYUSD__factory";
 export type { RelayerRegistry } from "./contracts/RelayerRegistry";
 export { RelayerRegistry__factory } from "./factories/contracts/RelayerRegistry__factory";
 export type { SubscriptionManager } from "./contracts/SubscriptionManager";
 export { SubscriptionManager__factory } from "./factories/contracts/SubscriptionManager__factory";
+export type { TestPYUSD } from "./contracts/test/TestPYUSD";
+export { TestPYUSD__factory } from "./factories/contracts/test/TestPYUSD__factory";

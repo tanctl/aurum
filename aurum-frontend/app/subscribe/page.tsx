@@ -8,7 +8,7 @@ import { useAccount, useChainId, useSignTypedData } from "wagmi";
 import { getPyusdAddress, getSubscriptionManagerAddress, useErc20Read } from "@/lib/contracts";
 import { type SupportedChainId } from "@/lib/wagmi";
 import { decodeTemplate, type SubscriptionTemplate } from "@/lib/subscriptionTemplate";
-import { parseUnits } from "viem";
+import { formatUnits, parseUnits } from "viem";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const SEPOLIA_CHAIN_ID = 11155111 as SupportedChainId;
@@ -17,6 +17,11 @@ const BASE_SEPOLIA_CHAIN_ID = 84532 as SupportedChainId;
 const DEFAULT_TOKEN_DECIMALS = 18;
 const PYUSD_DECIMALS = 6;
 const SIGNING_GRACE_PERIOD_SECONDS = 5 * 60;
+const AVAIL_EXPLORER_TEMPLATE =
+  process.env.NEXT_PUBLIC_AVAIL_EXPLORER_TEMPLATE ??
+  (process.env.NEXT_PUBLIC_AVAIL_EXPLORER_URL
+    ? `${process.env.NEXT_PUBLIC_AVAIL_EXPLORER_URL.replace(/\/$/, "")}/block/{block}`
+    : "");
 
 const RAW_NETWORK_OPTIONS: Array<{ label: string; value: SupportedChainId }> = [
   { label: "Sepolia", value: SEPOLIA_CHAIN_ID },
@@ -100,6 +105,16 @@ type SubmitIntentPayload = {
   expiry: number;
   nonce: number;
   token: string;
+};
+
+type IntentBuildResult = {
+  intent: PreparedIntent;
+  amountAtomic: bigint;
+  maxTotalAtomic: bigint;
+  startTime: number;
+  expiry: number;
+  verifyingContract: string;
+  tokenDecimals: number;
 };
 
 type ReadySubmission = {
@@ -229,6 +244,11 @@ function SubscribeFromTemplate() {
     [selectedChain],
   );
 
+  const verifyingContractAddress = useMemo(
+    () => getSubscriptionManagerAddress(selectedChain),
+    [selectedChain],
+  );
+
   const templateNetwork = useMemo(() => {
     if (!template) {
       return undefined;
@@ -283,6 +303,37 @@ function SubscribeFromTemplate() {
     return DEFAULT_TOKEN_DECIMALS;
   }, [decimalsQuery?.data, selectedChain, selectedToken, template]);
 
+  const signingPreview = useMemo(() => {
+    if (!template) {
+      return null;
+    }
+
+    if (!address) {
+      return { error: "Connect your wallet to preview the signing payload." } as const;
+    }
+
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const result = buildIntentData({
+        now,
+        subscriber: address,
+        template,
+        selectedToken,
+        tokenDecimals,
+        verifyingContract: verifyingContractAddress,
+        gracePeriodSeconds: SIGNING_GRACE_PERIOD_SECONDS,
+      });
+      return { data: result } as const;
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to prepare signing details. Check the selected token and network.",
+      } as const;
+    }
+  }, [address, template, selectedToken, tokenDecimals, verifyingContractAddress]);
+
   const needsNetworkSwitch = useMemo(() => {
     if (!connectedChainId) {
       return false;
@@ -317,7 +368,7 @@ function SubscribeFromTemplate() {
       return;
     }
 
-    const verifyingContract = getSubscriptionManagerAddress(selectedChain);
+    const verifyingContract = verifyingContractAddress;
     if (!verifyingContract || verifyingContract === ZERO_ADDRESS) {
       setSubmission({
         status: "error",
@@ -328,58 +379,40 @@ function SubscribeFromTemplate() {
       return;
     }
 
-    let amountAtomic: bigint;
-    try {
-      amountAtomic = parseUnits(template.amount, tokenDecimals);
-    } catch {
-      setSubmission({
-        status: "error",
-        message: "Unable to encode the payment amount for the selected token decimals.",
-      });
-      return;
-    }
-
-    const maxPaymentsBigInt = BigInt(template.maxPayments);
-    const maxTotalAtomic = amountAtomic * maxPaymentsBigInt;
-
     try {
       const now = Math.floor(Date.now() / 1000);
-      const nonce = now;
-      const startTime = now + SIGNING_GRACE_PERIOD_SECONDS;
-      const expiry =
-        template.maxPayments > 0
-          ? startTime + template.interval * template.maxPayments + template.interval
-          : startTime + template.interval;
-
-      const preparedIntent: PreparedIntent = {
-        subscriber: address.toLowerCase(),
-        merchant: template.merchant.toLowerCase(),
-        amount: amountAtomic.toString(),
-        interval: template.interval,
-        startTime,
-        maxPayments: template.maxPayments,
-        maxTotalAmount: maxTotalAtomic.toString(),
-        expiry,
-        nonce,
-        token: selectedToken.toLowerCase(),
-      };
+      const { intent, verifyingContract: contractForSigning } = buildIntentData({
+        now,
+        subscriber: address,
+        template,
+        selectedToken,
+        tokenDecimals,
+        verifyingContract,
+        gracePeriodSeconds: SIGNING_GRACE_PERIOD_SECONDS,
+      });
 
       const signature = await signTypedDataAsync({
         domain: {
           name: "Aurum",
           version: "1",
           chainId: selectedChain,
-          verifyingContract,
+          verifyingContract: contractForSigning as `0x${string}`,
         },
         primaryType: "SubscriptionIntent",
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         types: SUBSCRIPTION_INTENT_TYPES as any,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        message: preparedIntent as any,
+        message: intent as any,
       });
 
-      const requestId = `${nonce}-${Math.random().toString(36).slice(2, 10)}`;
-      setSubmission({ status: "ready", signature, nonce, intent: preparedIntent, requestId });
+      const requestId = `${intent.nonce}-${Math.random().toString(36).slice(2, 10)}`;
+      setSubmission({
+        status: "ready",
+        signature,
+        nonce: intent.nonce,
+        intent,
+        requestId,
+      });
       setCopySuccess(false);
     } catch (error) {
       setSubmission({
@@ -584,6 +617,104 @@ function SubscribeFromTemplate() {
             selected cadence until the limit is reached.
           </div>
         </dl>
+
+        <div className="rounded-md border border-bronze/40 bg-carbon/60 px-4 py-3 text-xs text-text-muted">
+          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">Wallet signing details</h3>
+              <p>These raw values will appear in your wallet&apos;s signing prompt.</p>
+            </div>
+            <p className="text-2xs text-text-muted">
+              A {SIGNING_GRACE_PERIOD_SECONDS / 60}-minute buffer is added to the start time so the
+              relayer never rejects the intent for being “in the past”.
+            </p>
+            <p className="text-2xs text-text-muted">
+              Expiry is derived from the cadence and max payments: start time + (max payments + 1) ×
+              interval.
+            </p>
+          </div>
+
+          {signingPreview === null ? null : "error" in signingPreview ? (
+            <p className="mt-3 rounded-md border border-rose-500/40 bg-rose-500/5 px-3 py-2 text-rose-200">
+              {signingPreview.error}
+            </p>
+          ) : (
+            <dl className="mt-4 grid gap-3 md:grid-cols-2">
+              <div>
+                <dt className="text-text-primary">Subscriber (signer)</dt>
+                <dd className="mt-1 break-all">
+                  {truncateAddress(signingPreview.data.intent.subscriber)}
+                  <span className="ml-2 text-2xs text-text-muted">
+                    (must match your connected wallet)
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt className="text-text-primary">Merchant</dt>
+                <dd className="mt-1 break-all">
+                  {truncateAddress(signingPreview.data.intent.merchant)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-text-primary">Amount (raw)</dt>
+                <dd className="mt-1">
+                  {signingPreview.data.intent.amount}
+                  <span className="ml-2 text-2xs text-text-muted">
+                    ≈{" "}
+                    {formatTokenAmount(
+                      signingPreview.data.amountAtomic,
+                      signingPreview.data.tokenDecimals,
+                      template.amount,
+                    )}{" "}
+                    {selectedTokenLabel}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt className="text-text-primary">Max total (raw)</dt>
+                <dd className="mt-1">
+                  {signingPreview.data.intent.maxTotalAmount}
+                  <span className="ml-2 text-2xs text-text-muted">
+                    ≈{" "}
+                    {formatTokenAmount(
+                      signingPreview.data.maxTotalAtomic,
+                      signingPreview.data.tokenDecimals,
+                      template.maxTotalAmount,
+                    )}{" "}
+                    {selectedTokenLabel}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt className="text-text-primary">First execution</dt>
+                <dd className="mt-1">
+                  {formatTimestamp(signingPreview.data.startTime)} (
+                  {formatRelativeSeconds(
+                    signingPreview.data.startTime - Math.floor(Date.now() / 1000),
+                  )}
+                  )
+                </dd>
+              </div>
+              <div>
+                <dt className="text-text-primary">Expiry</dt>
+                <dd className="mt-1">
+                  {formatTimestamp(signingPreview.data.expiry)} (
+                  {formatRelativeSeconds(signingPreview.data.expiry - Math.floor(Date.now() / 1000))})
+                </dd>
+              </div>
+              <div>
+                <dt className="text-text-primary">Nonce</dt>
+                <dd className="mt-1">{signingPreview.data.intent.nonce}</dd>
+              </div>
+              <div>
+                <dt className="text-text-primary">Verifying contract</dt>
+                <dd className="mt-1 break-all">
+                  {truncateAddress(signingPreview.data.verifyingContract)}
+                </dd>
+              </div>
+            </dl>
+          )}
+        </div>
       </section>
 
       {networkConfigurationIssue ? (
@@ -605,9 +736,21 @@ function SubscribeFromTemplate() {
             <span>Subscription intent submitted successfully. ID: {submission.subscriptionId}.</span>
           </div>
           {submission.availBlock ? (
-            <p className="mt-2 text-xs text-emerald-100">
-              Avail DA block #{submission.availBlock} • extrinsic{" "}
-              {submission.availExtrinsic ?? "?"}
+            <p className="mt-2 flex flex-wrap items-center gap-3 text-xs text-emerald-100">
+              <span>
+                Avail DA block #{submission.availBlock} • extrinsic{" "}
+                {submission.availExtrinsic ?? "?"}
+              </span>
+              {buildAvailExplorerUrl(submission.availBlock, submission.availExtrinsic) ? (
+                <a
+                  href={buildAvailExplorerUrl(submission.availBlock, submission.availExtrinsic) ?? "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-emerald-200 underline decoration-dotted underline-offset-4 hover:text-emerald-100"
+                >
+                  View on Avail explorer
+                </a>
+              ) : null}
             </p>
           ) : null}
         </div>
@@ -715,4 +858,121 @@ function toSubmitIntentPayload(intent: PreparedIntent): SubmitIntentPayload {
     nonce: intent.nonce,
     token: intent.token.toLowerCase(),
   };
+}
+
+type BuildIntentParams = {
+  now: number;
+  subscriber: string;
+  template: SubscriptionTemplate;
+  selectedToken: string;
+  tokenDecimals: number;
+  verifyingContract: string;
+  gracePeriodSeconds: number;
+};
+
+function buildIntentData(params: BuildIntentParams): IntentBuildResult {
+  const {
+    now,
+    subscriber,
+    template,
+    selectedToken,
+    tokenDecimals,
+    verifyingContract,
+    gracePeriodSeconds,
+  } = params;
+
+  if (!verifyingContract || verifyingContract === ZERO_ADDRESS) {
+    throw new Error("Subscription manager address is not configured for the selected network.");
+  }
+
+  let amountAtomic: bigint;
+  try {
+    amountAtomic = parseUnits(template.amount, tokenDecimals);
+  } catch {
+    throw new Error("Unable to encode the payment amount for the selected token decimals.");
+  }
+
+  const maxPaymentsBigInt = BigInt(template.maxPayments);
+  const maxTotalAtomic = amountAtomic * maxPaymentsBigInt;
+  const startTime = now + gracePeriodSeconds;
+  const expiry =
+    template.maxPayments > 0
+      ? startTime + template.interval * template.maxPayments + template.interval
+      : startTime + template.interval;
+  const verifyingLower = verifyingContract.toLowerCase();
+
+  const intent: PreparedIntent = {
+    subscriber: subscriber.toLowerCase(),
+    merchant: template.merchant.toLowerCase(),
+    amount: amountAtomic.toString(),
+    interval: template.interval,
+    startTime,
+    maxPayments: template.maxPayments,
+    maxTotalAmount: maxTotalAtomic.toString(),
+    expiry,
+    nonce: now,
+    token: selectedToken.toLowerCase(),
+  };
+
+  return {
+    intent,
+    amountAtomic,
+    maxTotalAtomic,
+    startTime,
+    expiry,
+    verifyingContract: verifyingLower,
+    tokenDecimals,
+  };
+}
+
+function formatTokenAmount(value: bigint, decimals: number, fallback: string): string {
+  try {
+    return formatUnits(value, decimals);
+  } catch {
+    return fallback;
+  }
+}
+
+function formatTimestamp(seconds: number): string {
+  return new Date(seconds * 1000).toLocaleString();
+}
+
+function formatRelativeSeconds(deltaSeconds: number): string {
+  if (deltaSeconds <= 0) {
+    return "now";
+  }
+
+  const minutes = deltaSeconds / 60;
+  if (minutes < 2) {
+    return "≈1 minute";
+  }
+  if (minutes < 120) {
+    return `≈${Math.round(minutes)} minutes`;
+  }
+
+  const hours = minutes / 60;
+  if (hours < 48) {
+    return `≈${Math.round(hours)} hours`;
+  }
+
+  const days = hours / 24;
+  return `≈${Math.round(days)} days`;
+}
+
+function buildAvailExplorerUrl(block?: number, extrinsic?: number): string | null {
+  if (!AVAIL_EXPLORER_TEMPLATE || !block) {
+    return null;
+  }
+
+  let url = AVAIL_EXPLORER_TEMPLATE.replace("{block}", String(block));
+  if (url.includes("{extrinsic}")) {
+    if (extrinsic === undefined) {
+      if (url.includes("extrinsic/")) {
+        url = url.replace("extrinsic/", "block/");
+      }
+      return url.replace("{extrinsic}", "").replace(/[-_/]+$/, "");
+    }
+    return url.replace("{extrinsic}", String(extrinsic));
+  }
+  return url;
 }

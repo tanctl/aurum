@@ -3,6 +3,7 @@
 /* eslint-disable */
 import type * as interfaces from "./interfaces";
 export type { interfaces };
-export type { MockPYUSD } from "./MockPYUSD";
+import type * as test from "./test";
+export type { test };
 export type { RelayerRegistry } from "./RelayerRegistry";
 export type { SubscriptionManager } from "./SubscriptionManager";

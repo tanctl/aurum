@@ -8,11 +8,19 @@ import type { SupportedChainId } from "@/lib/wagmi";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 
-function envAddress(value: string | undefined): Address {
-  if (!value || value.trim() === "") {
-    return ZERO_ADDRESS;
+const DEFAULT_PYUSD_ADDRESSES: Record<SupportedChainId, Address> = {
+  11155111: "0xCaC524BcA292aaade2DF8A05cC58F0a65B1B3bB9" as Address,
+  84532: "0x3bC4424841341f8b2657eAE8f6B0f2125f63b934" as Address,
+};
+
+function envAddress(value: string | undefined, fallback?: Address): Address {
+  if (value && value.trim() !== "") {
+    return value as Address;
   }
-  return value as Address;
+  if (fallback) {
+    return fallback;
+  }
+  return ZERO_ADDRESS;
 }
 
 export const SUBSCRIPTION_MANAGER_ABI = subscriptionManagerArtifact.abi as Abi;
@@ -24,8 +32,14 @@ export const SUBSCRIPTION_MANAGER_ADDRESSES: Record<SupportedChainId, Address> =
 };
 
 export const PYUSD_ADDRESSES: Record<SupportedChainId, Address> = {
-  11155111: envAddress(process.env.NEXT_PUBLIC_PYUSD_SEPOLIA),
-  84532: envAddress(process.env.NEXT_PUBLIC_PYUSD_BASE),
+  11155111: envAddress(
+    process.env.NEXT_PUBLIC_PYUSD_SEPOLIA,
+    DEFAULT_PYUSD_ADDRESSES[11155111],
+  ),
+  84532: envAddress(
+    process.env.NEXT_PUBLIC_PYUSD_BASE,
+    DEFAULT_PYUSD_ADDRESSES[84532],
+  ),
 };
 
 type SubscriptionManagerReadParams = Omit<

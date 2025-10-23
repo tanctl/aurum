@@ -6,11 +6,6 @@ abigen!(
 );
 
 abigen!(
-    MockPYUSD,
-    "../artifacts/contracts/MockPYUSD.sol/MockPYUSD.json"
-);
-
-abigen!(
     IERC20,
     r#"[
         function balanceOf(address account) external view returns (uint256)

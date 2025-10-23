@@ -9,13 +9,13 @@ describe("RelayerRegistry", function () {
   let relayer1;
   let relayer2;
   let outsider;
-  let mockPYUSD;
+  let testPYUSD;
   let relayerRegistry;
   let subscriptionManager;
 
   async function registerRelayer(signer, amount = MINIMUM_STAKE) {
-    await mockPYUSD.mint(signer.address, amount);
-    await mockPYUSD.connect(signer).approve(await relayerRegistry.getAddress(), amount);
+    await testPYUSD.mint(signer.address, amount);
+    await testPYUSD.connect(signer).approve(await relayerRegistry.getAddress(), amount);
     await relayerRegistry.connect(signer).registerRelayer(amount);
   }
 
@@ -35,16 +35,16 @@ describe("RelayerRegistry", function () {
   beforeEach(async function () {
     [owner, relayer1, relayer2, outsider] = await ethers.getSigners();
 
-    const MockPYUSD = await ethers.getContractFactory("MockPYUSD");
-    mockPYUSD = await MockPYUSD.deploy();
-    await mockPYUSD.waitForDeployment();
+    const TestPYUSD = await ethers.getContractFactory("TestPYUSD");
+    testPYUSD = await TestPYUSD.deploy();
+    await testPYUSD.waitForDeployment();
 
     const RelayerRegistry = await ethers.getContractFactory("RelayerRegistry");
-    relayerRegistry = await RelayerRegistry.deploy(await mockPYUSD.getAddress());
+    relayerRegistry = await RelayerRegistry.deploy(await testPYUSD.getAddress());
     await relayerRegistry.waitForDeployment();
 
     const SubscriptionManager = await ethers.getContractFactory("SubscriptionManager");
-    const supportedTokens = [await mockPYUSD.getAddress()];
+    const supportedTokens = [await testPYUSD.getAddress()];
     subscriptionManager = await SubscriptionManager.deploy(
       supportedTokens,
       await relayerRegistry.getAddress()
@@ -56,7 +56,7 @@ describe("RelayerRegistry", function () {
 
   describe("deployment", function () {
     it("initialises core parameters", async function () {
-      expect(await relayerRegistry.PYUSD_ADDRESS()).to.equal(await mockPYUSD.getAddress());
+      expect(await relayerRegistry.PYUSD_ADDRESS()).to.equal(await testPYUSD.getAddress());
       expect(await relayerRegistry.MINIMUM_STAKE()).to.equal(MINIMUM_STAKE);
       expect(await relayerRegistry.slashAmountConfig()).to.equal(SLASH_AMOUNT);
       expect(await relayerRegistry.failureThresholdConfig()).to.equal(3);
@@ -79,8 +79,8 @@ describe("RelayerRegistry", function () {
 
     it("rejects insufficient stake", async function () {
       const amount = MINIMUM_STAKE - ethers.parseUnits("1", 6);
-      await mockPYUSD.mint(relayer1.address, amount);
-      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), amount);
+      await testPYUSD.mint(relayer1.address, amount);
+      await testPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), amount);
 
       await expect(
         relayerRegistry.connect(relayer1).registerRelayer(amount)
@@ -89,8 +89,8 @@ describe("RelayerRegistry", function () {
 
     it("prevents duplicate registration", async function () {
       await registerRelayer(relayer1);
-      await mockPYUSD.mint(relayer1.address, MINIMUM_STAKE);
-      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), MINIMUM_STAKE);
+      await testPYUSD.mint(relayer1.address, MINIMUM_STAKE);
+      await testPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), MINIMUM_STAKE);
 
       await expect(
         relayerRegistry.connect(relayer1).registerRelayer(MINIMUM_STAKE)
@@ -195,8 +195,8 @@ describe("RelayerRegistry", function () {
 
     it("allows relayer to restake and regain active status", async function () {
       const topUp = ethers.parseUnits("200", 6);
-      await mockPYUSD.mint(relayer1.address, topUp);
-      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), topUp);
+      await testPYUSD.mint(relayer1.address, topUp);
+      await testPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), topUp);
 
       await expect(relayerRegistry.connect(relayer1).restakeAfterSlash(topUp))
         .to.emit(relayerRegistry, "RelayerRestaked")
@@ -208,8 +208,8 @@ describe("RelayerRegistry", function () {
 
     it("allows owner to emergency slash and unslash", async function () {
       const extraStake = ethers.parseUnits("300", 6);
-      await mockPYUSD.mint(relayer1.address, extraStake);
-      await mockPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), extraStake);
+      await testPYUSD.mint(relayer1.address, extraStake);
+      await testPYUSD.connect(relayer1).approve(await relayerRegistry.getAddress(), extraStake);
       await relayerRegistry.connect(relayer1).restakeAfterSlash(extraStake);
 
       await expect(

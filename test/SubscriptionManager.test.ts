@@ -6,7 +6,7 @@ describe("SubscriptionManager", function () {
   const MINIMUM_STAKE = ethers.parseUnits("1000", 6);
 
   let subscriptionManager;
-  let mockPYUSD;
+  let testPYUSD;
   let relayerRegistry;
   let extraToken;
   let owner;
@@ -16,7 +16,7 @@ describe("SubscriptionManager", function () {
   let otherAccount;
 
   async function createSubscriptionIntent(params = {}) {
-    const token = params.token || (await mockPYUSD.getAddress());
+    const token = params.token || (await testPYUSD.getAddress());
     const amount = params.amount || ethers.parseUnits("10", token === ETH_ADDRESS ? 18 : 6);
     const interval = params.interval || 86400;
     const startTime = params.startTime || Math.floor(Date.now() / 1000);
@@ -109,8 +109,8 @@ describe("SubscriptionManager", function () {
   }
 
   async function registerActiveRelayer() {
-    await mockPYUSD.mint(relayer.address, MINIMUM_STAKE);
-    await mockPYUSD.connect(relayer).approve(await relayerRegistry.getAddress(), MINIMUM_STAKE);
+    await testPYUSD.mint(relayer.address, MINIMUM_STAKE);
+    await testPYUSD.connect(relayer).approve(await relayerRegistry.getAddress(), MINIMUM_STAKE);
     await relayerRegistry.connect(relayer).registerRelayer(MINIMUM_STAKE);
   }
 
@@ -128,21 +128,21 @@ describe("SubscriptionManager", function () {
   beforeEach(async function () {
     [owner, subscriber, merchant, relayer, otherAccount] = await ethers.getSigners();
 
-    const MockPYUSD = await ethers.getContractFactory("MockPYUSD");
-    mockPYUSD = await MockPYUSD.deploy();
-    await mockPYUSD.waitForDeployment();
+    const TestPYUSD = await ethers.getContractFactory("TestPYUSD");
+    testPYUSD = await TestPYUSD.deploy();
+    await testPYUSD.waitForDeployment();
 
     const RelayerRegistry = await ethers.getContractFactory("RelayerRegistry");
-    relayerRegistry = await RelayerRegistry.deploy(await mockPYUSD.getAddress());
+    relayerRegistry = await RelayerRegistry.deploy(await testPYUSD.getAddress());
     await relayerRegistry.waitForDeployment();
 
-    const ExtraToken = await ethers.getContractFactory("MockPYUSD");
+    const ExtraToken = await ethers.getContractFactory("TestPYUSD");
     extraToken = await ExtraToken.deploy();
     await extraToken.waitForDeployment();
 
     const SubscriptionManager = await ethers.getContractFactory("SubscriptionManager");
     subscriptionManager = await SubscriptionManager.deploy(
-      [await mockPYUSD.getAddress()],
+      [await testPYUSD.getAddress()],
       await relayerRegistry.getAddress()
     );
     await subscriptionManager.waitForDeployment();
@@ -153,9 +153,9 @@ describe("SubscriptionManager", function () {
   describe("Deployment", function () {
     it("tracks default supported tokens", async function () {
       const supported = await subscriptionManager.getSupportedTokens();
-      expect(supported).to.include(await mockPYUSD.getAddress());
+      expect(supported).to.include(await testPYUSD.getAddress());
       expect(supported).to.include(ETH_ADDRESS);
-      expect(await subscriptionManager.supportedTokens(await mockPYUSD.getAddress())).to.equal(true);
+      expect(await subscriptionManager.supportedTokens(await testPYUSD.getAddress())).to.equal(true);
       expect(await subscriptionManager.supportedTokens(ETH_ADDRESS)).to.equal(true);
     });
 
@@ -173,8 +173,8 @@ describe("SubscriptionManager", function () {
 
     it("increments nonce after subscription creation", async function () {
       const { intent, signature } = await createSubscriptionIntent();
-      await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
-      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
+      await testPYUSD.mint(subscriber.address, intent.maxTotalAmount);
+      await testPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
 
       await subscriptionManager.createSubscription(intent, signature);
       expect(await subscriptionManager.getNextNonce(subscriber.address)).to.equal(1);
@@ -182,8 +182,8 @@ describe("SubscriptionManager", function () {
 
     it("rejects mismatched nonce", async function () {
       const { intent, signature } = await createSubscriptionIntent({ nonce: 5 });
-      await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
-      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
+      await testPYUSD.mint(subscriber.address, intent.maxTotalAmount);
+      await testPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
 
       await expect(subscriptionManager.createSubscription(intent, signature)).to.be.revertedWith("Invalid nonce");
     });
@@ -230,20 +230,20 @@ describe("SubscriptionManager", function () {
   describe("Subscription creation", function () {
     it("creates PYUSD subscription and stores metadata", async function () {
       const { intent, signature } = await createSubscriptionIntent();
-      await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
-      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
+      await testPYUSD.mint(subscriber.address, intent.maxTotalAmount);
+      await testPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
 
       const tx = await subscriptionManager.createSubscription(intent, signature);
       const receipt = await tx.wait();
       const eventArgs = getEventArgs(receipt, "SubscriptionCreated");
 
       expect(eventArgs.subscriptionId).to.not.equal(undefined);
-      expect(eventArgs.token).to.equal(await mockPYUSD.getAddress());
+      expect(eventArgs.token).to.equal(await testPYUSD.getAddress());
 
       const stored = await subscriptionManager.getSubscription(eventArgs.subscriptionId);
       expect(stored.subscriber).to.equal(subscriber.address);
-      expect(stored.token).to.equal(await mockPYUSD.getAddress());
-      expect(await subscriptionManager.subscriptionToken(eventArgs.subscriptionId)).to.equal(await mockPYUSD.getAddress());
+      expect(stored.token).to.equal(await testPYUSD.getAddress());
+      expect(await subscriptionManager.subscriptionToken(eventArgs.subscriptionId)).to.equal(await testPYUSD.getAddress());
     });
 
     it("rejects unsupported token intents", async function () {
@@ -261,8 +261,8 @@ describe("SubscriptionManager", function () {
 
     it("executes PYUSD subscription and pays merchant/relayer", async function () {
       const { intent, signature } = await createSubscriptionIntent();
-      await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
-      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
+      await testPYUSD.mint(subscriber.address, intent.maxTotalAmount);
+      await testPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
 
       const createTx = await subscriptionManager.createSubscription(intent, signature);
       const createReceipt = await createTx.wait();
@@ -270,20 +270,20 @@ describe("SubscriptionManager", function () {
 
       await advanceTime(intent.interval);
 
-      const merchantBalanceBefore = await mockPYUSD.balanceOf(merchant.address);
-      const relayerBalanceBefore = await mockPYUSD.balanceOf(relayer.address);
+      const merchantBalanceBefore = await testPYUSD.balanceOf(merchant.address);
+      const relayerBalanceBefore = await testPYUSD.balanceOf(relayer.address);
 
       const executeTx = await subscriptionManager.connect(relayer).executeSubscription(subscriptionId, relayer.address);
       const executeReceipt = await executeTx.wait();
       const eventArgs = getEventArgs(executeReceipt, "PaymentExecuted");
 
-      expect(eventArgs.token).to.equal(await mockPYUSD.getAddress());
+      expect(eventArgs.token).to.equal(await testPYUSD.getAddress());
 
       const fee = (intent.amount * BigInt(await subscriptionManager.PROTOCOL_FEE_BPS())) / 10000n;
       const merchantAmount = intent.amount - fee;
 
-      const merchantBalanceAfter = await mockPYUSD.balanceOf(merchant.address);
-      const relayerBalanceAfter = await mockPYUSD.balanceOf(relayer.address);
+      const merchantBalanceAfter = await testPYUSD.balanceOf(merchant.address);
+      const relayerBalanceAfter = await testPYUSD.balanceOf(relayer.address);
 
       expect(merchantBalanceAfter - merchantBalanceBefore).to.equal(merchantAmount);
       expect(relayerBalanceAfter - relayerBalanceBefore).to.equal(fee);
@@ -357,8 +357,8 @@ describe("SubscriptionManager", function () {
 
     it("handles concurrent PYUSD and ETH subscriptions for same merchant", async function () {
       const { intent: pyIntent, signature: pySignature } = await createSubscriptionIntent();
-      await mockPYUSD.mint(subscriber.address, pyIntent.maxTotalAmount);
-      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), pyIntent.maxTotalAmount);
+      await testPYUSD.mint(subscriber.address, pyIntent.maxTotalAmount);
+      await testPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), pyIntent.maxTotalAmount);
       const pyTx = await subscriptionManager.createSubscription(pyIntent, pySignature);
       const pyId = getEventArgs(await pyTx.wait(), "SubscriptionCreated").subscriptionId;
 
@@ -376,10 +376,10 @@ describe("SubscriptionManager", function () {
 
       await advanceTime(pyIntent.interval);
 
-      const merchantPyBefore = await mockPYUSD.balanceOf(merchant.address);
+      const merchantPyBefore = await testPYUSD.balanceOf(merchant.address);
       const merchantEthBefore = await ethers.provider.getBalance(merchant.address);
 
-      const relayerPyBefore = await mockPYUSD.balanceOf(relayer.address);
+      const relayerPyBefore = await testPYUSD.balanceOf(relayer.address);
 
       const pyTxResponse = await subscriptionManager.connect(relayer).executeSubscription(pyId, relayer.address);
       await pyTxResponse.wait();
@@ -393,10 +393,10 @@ describe("SubscriptionManager", function () {
       const feePy = (pyIntent.amount * BigInt(await subscriptionManager.PROTOCOL_FEE_BPS())) / 10000n;
       const feeEth = (ethAmount * BigInt(await subscriptionManager.PROTOCOL_FEE_BPS())) / 10000n;
 
-      const merchantPyAfter = await mockPYUSD.balanceOf(merchant.address);
+      const merchantPyAfter = await testPYUSD.balanceOf(merchant.address);
       const merchantEthAfter = await ethers.provider.getBalance(merchant.address);
       const relayerEthAfter = await ethers.provider.getBalance(relayer.address);
-      const relayerPyAfter = await mockPYUSD.balanceOf(relayer.address);
+      const relayerPyAfter = await testPYUSD.balanceOf(relayer.address);
 
       expect(merchantPyAfter - merchantPyBefore).to.equal(pyIntent.amount - feePy);
       expect(merchantEthAfter - merchantEthBefore).to.equal(ethAmount - feeEth);
@@ -517,8 +517,8 @@ describe("SubscriptionManager", function () {
   describe("State transitions", function () {
     it("pauses and resumes while retaining token data", async function () {
       const { intent, signature } = await createSubscriptionIntent();
-      await mockPYUSD.mint(subscriber.address, intent.maxTotalAmount);
-      await mockPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
+      await testPYUSD.mint(subscriber.address, intent.maxTotalAmount);
+      await testPYUSD.connect(subscriber).approve(await subscriptionManager.getAddress(), intent.maxTotalAmount);
       const tx = await subscriptionManager.createSubscription(intent, signature);
       const subscriptionId = getEventArgs(await tx.wait(), "SubscriptionCreated").subscriptionId;
 

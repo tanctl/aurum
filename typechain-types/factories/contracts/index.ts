@@ -2,6 +2,6 @@
 /* tslint:disable */
 /* eslint-disable */
 export * as interfaces from "./interfaces";
-export { MockPYUSD__factory } from "./MockPYUSD__factory";
+export * as test from "./test";
 export { RelayerRegistry__factory } from "./RelayerRegistry__factory";
 export { SubscriptionManager__factory } from "./SubscriptionManager__factory";

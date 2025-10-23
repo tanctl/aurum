@@ -21,9 +21,9 @@ import type {
   TypedLogDescription,
   TypedListener,
   TypedContractMethod,
-} from "../common";
+} from "../../common";
 
-export interface MockPYUSDInterface extends Interface {
+export interface TestPYUSDInterface extends Interface {
   getFunction(
     nameOrSignature:
       | "allowance"
@@ -174,11 +174,11 @@ export namespace TransferEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
-export interface MockPYUSD extends BaseContract {
-  connect(runner?: ContractRunner | null): MockPYUSD;
+export interface TestPYUSD extends BaseContract {
+  connect(runner?: ContractRunner | null): TestPYUSD;
   waitForDeployment(): Promise<this>;
 
-  interface: MockPYUSDInterface;
+  interface: TestPYUSDInterface;
 
   queryFilter<TCEvent extends TypedContractEvent>(
     event: TCEvent,

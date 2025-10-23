@@ -66,10 +66,6 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.ICrossChainBridge__factory>;
     getContractFactory(
-      name: "MockPYUSD",
-      signerOrOptions?: ethers.Signer | FactoryOptions
-    ): Promise<Contracts.MockPYUSD__factory>;
-    getContractFactory(
       name: "RelayerRegistry",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.RelayerRegistry__factory>;
@@ -77,6 +73,10 @@ declare module "hardhat/types/runtime" {
       name: "SubscriptionManager",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.SubscriptionManager__factory>;
+    getContractFactory(
+      name: "TestPYUSD",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.TestPYUSD__factory>;
 
     getContractAt(
       name: "Ownable",
@@ -144,11 +144,6 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.ICrossChainBridge>;
     getContractAt(
-      name: "MockPYUSD",
-      address: string | ethers.Addressable,
-      signer?: ethers.Signer
-    ): Promise<Contracts.MockPYUSD>;
-    getContractAt(
       name: "RelayerRegistry",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -158,6 +153,11 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.SubscriptionManager>;
+    getContractAt(
+      name: "TestPYUSD",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.TestPYUSD>;
 
     deployContract(
       name: "Ownable",
@@ -212,10 +212,6 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ICrossChainBridge>;
     deployContract(
-      name: "MockPYUSD",
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.MockPYUSD>;
-    deployContract(
       name: "RelayerRegistry",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.RelayerRegistry>;
@@ -223,6 +219,10 @@ declare module "hardhat/types/runtime" {
       name: "SubscriptionManager",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.SubscriptionManager>;
+    deployContract(
+      name: "TestPYUSD",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.TestPYUSD>;
 
     deployContract(
       name: "Ownable",
@@ -290,11 +290,6 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ICrossChainBridge>;
     deployContract(
-      name: "MockPYUSD",
-      args: any[],
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.MockPYUSD>;
-    deployContract(
       name: "RelayerRegistry",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -304,6 +299,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.SubscriptionManager>;
+    deployContract(
+      name: "TestPYUSD",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.TestPYUSD>;
 
     // default types
     getContractFactory(

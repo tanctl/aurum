@@ -1,4 +1,4 @@
-use super::contract_bindings::{MockPYUSD, SubscriptionManager, IERC20};
+use super::contract_bindings::{SubscriptionManager, IERC20};
 use crate::config::Config;
 use crate::error::{RelayerError, Result};
 use chrono::Utc;
@@ -24,8 +24,6 @@ struct RealBlockchainClient {
     sepolia_subscription_manager:
         SubscriptionManager<SignerMiddleware<Provider<Http>, LocalWallet>>,
     base_subscription_manager: SubscriptionManager<SignerMiddleware<Provider<Http>, LocalWallet>>,
-    sepolia_pyusd: MockPYUSD<SignerMiddleware<Provider<Http>, LocalWallet>>,
-    base_pyusd: MockPYUSD<SignerMiddleware<Provider<Http>, LocalWallet>>,
     relayer_address: Address,
     sepolia_chain_id: u64,
     base_chain_id: u64,
@@ -339,25 +337,11 @@ impl RealBlockchainClient {
         let base_subscription_manager =
             SubscriptionManager::new(base_sm_address, base_client.clone());
 
-        let sepolia_pyusd_address: Address = config
-            .pyusd_address_sepolia
-            .parse()
-            .map_err(|_| RelayerError::Config(anyhow::anyhow!("invalid sepolia pyusd address")))?;
-        let base_pyusd_address: Address = config
-            .pyusd_address_base
-            .parse()
-            .map_err(|_| RelayerError::Config(anyhow::anyhow!("invalid base pyusd address")))?;
-
-        let sepolia_pyusd = MockPYUSD::new(sepolia_pyusd_address, sepolia_client.clone());
-        let base_pyusd = MockPYUSD::new(base_pyusd_address, base_client.clone());
-
         Ok(Self {
             sepolia_provider: sepolia_client,
             base_provider: base_client,
             sepolia_subscription_manager,
             base_subscription_manager,
-            sepolia_pyusd,
-            base_pyusd,
             relayer_address,
             sepolia_chain_id: sepolia_chain_id_u64,
             base_chain_id: base_chain_id_u64,
@@ -370,19 +354,10 @@ impl RealBlockchainClient {
     ) -> Result<(
         &Arc<SignerMiddleware<Provider<Http>, LocalWallet>>,
         &SubscriptionManager<SignerMiddleware<Provider<Http>, LocalWallet>>,
-        &MockPYUSD<SignerMiddleware<Provider<Http>, LocalWallet>>,
     )> {
         match chain.to_lowercase().as_str() {
-            "sepolia" => Ok((
-                &self.sepolia_provider,
-                &self.sepolia_subscription_manager,
-                &self.sepolia_pyusd,
-            )),
-            "base" => Ok((
-                &self.base_provider,
-                &self.base_subscription_manager,
-                &self.base_pyusd,
-            )),
+            "sepolia" => Ok((&self.sepolia_provider, &self.sepolia_subscription_manager)),
+            "base" => Ok((&self.base_provider, &self.base_subscription_manager)),
             _ => Err(RelayerError::Validation(format!(
                 "unsupported chain: {}",
                 chain
@@ -400,7 +375,7 @@ impl RealBlockchainClient {
             subscription_id, chain
         );
 
-        let (_, subscription_manager, _) = self.get_provider_and_contracts(chain)?;
+        let (_, subscription_manager) = self.get_provider_and_contracts(chain)?;
 
         let subscription = subscription_manager
             .get_subscription(subscription_id)
@@ -463,7 +438,7 @@ impl RealBlockchainClient {
             subscriber, token, amount, chain
         );
 
-        let (provider, subscription_manager, _) = self.get_provider_and_contracts(chain)?;
+        let (provider, subscription_manager) = self.get_provider_and_contracts(chain)?;
         let contract_address = subscription_manager.address();
 
         let erc20 = IERC20::new(token, provider.clone());
@@ -491,7 +466,7 @@ impl RealBlockchainClient {
         chain: &str,
     ) -> Result<U256> {
         if token == Address::zero() {
-            let (provider, _, _) = self.get_provider_and_contracts(chain)?;
+            let (provider, _) = self.get_provider_and_contracts(chain)?;
             let balance = provider.get_balance(subscriber, None).await.map_err(|e| {
                 RelayerError::ContractRevert(format!("failed to check balance: {}", e))
             })?;
@@ -507,7 +482,7 @@ impl RealBlockchainClient {
             subscriber, token, chain
         );
 
-        let (provider, _, _) = self.get_provider_and_contracts(chain)?;
+        let (provider, _) = self.get_provider_and_contracts(chain)?;
         let erc20 = IERC20::new(token, provider.clone());
 
         let balance =
@@ -529,7 +504,7 @@ impl RealBlockchainClient {
             subscription_id, chain
         );
 
-        let (provider, subscription_manager, _) = self.get_provider_and_contracts(chain)?;
+        let (provider, subscription_manager) = self.get_provider_and_contracts(chain)?;
 
         let subscription_data = self
             .get_subscription(subscription_id, chain)
@@ -631,7 +606,7 @@ impl RealBlockchainClient {
             tx_hash, chain
         );
 
-        let (provider, _, _) = self.get_provider_and_contracts(chain)?;
+        let (provider, _) = self.get_provider_and_contracts(chain)?;
 
         let receipt = provider
             .get_transaction_receipt(tx_hash)
@@ -652,7 +627,7 @@ impl RealBlockchainClient {
     }
 
     async fn fetch_logs(&self, chain: &str, filter: Filter) -> Result<Vec<EthersLog>> {
-        let (provider, _, _) = self.get_provider_and_contracts(chain)?;
+        let (provider, _) = self.get_provider_and_contracts(chain)?;
         provider.get_logs(&filter).await.map_err(|e| {
             RelayerError::RpcConnectionFailed(format!("failed to fetch logs on {}: {}", chain, e))
         })
@@ -661,7 +636,7 @@ impl RealBlockchainClient {
     async fn get_current_block_number(&self, chain: &str) -> Result<u64> {
         info!("fetching current block number for chain {}", chain);
 
-        let (provider, _, _) = self.get_provider_and_contracts(chain)?;
+        let (provider, _) = self.get_provider_and_contracts(chain)?;
 
         let block_number = provider.get_block_number().await.map_err(|e| {
             RelayerError::RpcConnectionFailed(format!("failed to get block number: {}", e))
@@ -677,7 +652,7 @@ impl RealBlockchainClient {
             chain, block_number
         );
 
-        let (provider, _, _) = self.get_provider_and_contracts(chain)?;
+        let (provider, _) = self.get_provider_and_contracts(chain)?;
         let block = provider
             .get_block(block_number)
             .await
@@ -700,7 +675,7 @@ impl RealBlockchainClient {
     async fn validate_connection(&self, chain: &str) -> Result<()> {
         info!("validating connection to chain {}", chain);
 
-        let (provider, _, _) = self.get_provider_and_contracts(chain)?;
+        let (provider, _) = self.get_provider_and_contracts(chain)?;
 
         let chain_id = provider.get_chainid().await.map_err(|e| {
             RelayerError::RpcConnectionFailed(format!("failed to get chain id: {}", e))
@@ -719,7 +694,7 @@ impl RealBlockchainClient {
             subscription_id, chain
         );
 
-        let (_, subscription_manager, _) = self.get_provider_and_contracts(chain)?;
+        let (_, subscription_manager) = self.get_provider_and_contracts(chain)?;
 
         let payment_count = subscription_manager
             .executed_payments(subscription_id)
