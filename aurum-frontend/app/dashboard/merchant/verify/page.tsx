@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 
 import { useCrossChainAttestations } from "@/hooks/useEnvio";
+import { NexusAttestationDemo } from "@/components/nexus/NexusAttestationDemo";
 
 export default function MerchantVerifyPage() {
   const [subscriptionId, setSubscriptionId] = useState<string>("");
@@ -26,7 +27,12 @@ export default function MerchantVerifyPage() {
         </p>
       </header>
 
-      <form onSubmit={handleSubmit} className="card-surface flex flex-col gap-4 p-6 sm:flex-row">
+      <NexusAttestationDemo />
+
+      <form
+        onSubmit={handleSubmit}
+        className="card-surface flex flex-col gap-4 p-6 sm:flex-row"
+      >
         <input
           type="text"
           value={subscriptionId}
@@ -74,15 +80,15 @@ export default function MerchantVerifyPage() {
                 <dl className="grid grid-cols-2 gap-2 text-xs text-text-muted">
                   <div>
                     <dt className="uppercase tracking-widest text-secondary/80">Token</dt>
-                    <dd className="text-text-primary">{attestation.token}</dd>
+                    <dd className="text-text-primary">{attestation.token ?? "Unknown"}</dd>
                   </div>
                   <div>
                     <dt className="uppercase tracking-widest text-secondary/80">Amount</dt>
-                    <dd className="text-text-primary">{attestation.amount}</dd>
+                    <dd className="text-text-primary">{attestation.amount ?? "0"}</dd>
                   </div>
                   <div>
                     <dt className="uppercase tracking-widest text-secondary/80">Source chain</dt>
-                    <dd className="text-text-primary">{attestation.sourceChainId}</dd>
+                    <dd className="text-text-primary">{attestation.chainId}</dd>
                   </div>
                   <div>
                     <dt className="uppercase tracking-widest text-secondary/80">Timestamp</dt>

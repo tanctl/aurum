@@ -110,6 +110,8 @@ pub struct MerchantTokenStatsRow {
     pub total_payments: i64,
     #[serde(rename = "chainId", deserialize_with = "deserialize_i64")]
     pub chain_id: i64,
+    #[serde(rename = "averageTransactionValue")]
+    pub average_transaction_value: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -473,7 +475,11 @@ impl RemoteEnvioClient {
                 .checked_add(revenue_u256)
                 .unwrap_or(U256::MAX);
 
-            let average = compute_average_value(&row.total_revenue, total_payments);
+            let average = if !row.average_transaction_value.is_empty() {
+                row.average_transaction_value.clone()
+            } else {
+                compute_average_value(&row.total_revenue, total_payments)
+            };
 
             let token_stats = TokenStats {
                 token_address: token_address.clone(),
@@ -605,12 +611,9 @@ impl RemoteEnvioClient {
                 id
                 subscriptionId
                 paymentNumber
-                sourceChainId
+                chainId
                 token
                 amount
-                merchant
-                txHash
-                blockNumber
                 timestamp
                 verified
             }
@@ -849,15 +852,12 @@ pub struct CrossChainAttestationData {
     pub subscription_id: String,
     #[serde(rename = "paymentNumber", deserialize_with = "deserialize_i64")]
     pub payment_number: i64,
-    #[serde(rename = "sourceChainId", deserialize_with = "deserialize_i64")]
-    pub source_chain_id: i64,
-    pub token: String,
-    pub amount: String,
-    pub merchant: String,
-    #[serde(rename = "txHash")]
-    pub tx_hash: String,
-    #[serde(rename = "blockNumber", deserialize_with = "deserialize_i64")]
-    pub block_number: i64,
+    #[serde(rename = "chainId", deserialize_with = "deserialize_i64")]
+    pub chain_id: i64,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub amount: Option<String>,
     #[serde(rename = "timestamp", deserialize_with = "deserialize_i64")]
     pub timestamp: i64,
     pub verified: bool,

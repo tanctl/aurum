@@ -16,18 +16,42 @@ type HeaderProps = {
 function HeaderDashboardControls({ variant }: { variant: "desktop" | "mobile" }) {
   const connectButton = (
     <ConnectButton.Custom>
-      {({ account, openAccountModal, openConnectModal, mounted }) => {
-        const ready = mounted;
-        const connected = ready && account;
+      {({
+        account,
+        chain,
+        openAccountModal,
+        openChainModal,
+        openConnectModal,
+        mounted,
+        authenticationStatus,
+      }) => {
+        const ready = mounted && authenticationStatus !== "loading";
+        const connected =
+          ready &&
+          account &&
+          chain &&
+          (!authenticationStatus || authenticationStatus === "authenticated");
 
         if (!connected) {
           return (
             <button
               type="button"
-              onClick={openConnectModal}
               className="inline-flex items-center gap-2 rounded-md border border-primary bg-primary px-4 py-2 text-xs font-semibold uppercase tracking-widest text-foundation-black transition-colors hover:bg-secondary hover:text-foundation-black"
+              onClick={openConnectModal}
             >
               Connect Wallet
+            </button>
+          );
+        }
+
+        if (chain.unsupported) {
+          return (
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-md border border-rose-500 bg-rose-500 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-foundation-black transition-colors hover:bg-rose-400"
+              onClick={openChainModal}
+            >
+              Wrong Network
             </button>
           );
         }
@@ -35,10 +59,16 @@ function HeaderDashboardControls({ variant }: { variant: "desktop" | "mobile" })
         return (
           <button
             type="button"
-            onClick={openAccountModal}
+            onClick={() => openAccountModal()}
             className="inline-flex items-center gap-2 rounded-md border border-primary bg-transparent px-4 py-2 text-xs font-semibold uppercase tracking-widest text-primary transition-colors hover:bg-primary/10"
+            title={account.displayName}
           >
             {account.displayName}
+            {account.displayBalance ? (
+              <span className="text-2xs text-text-muted">
+                {account.displayBalance}
+              </span>
+            ) : null}
           </button>
         );
       }}

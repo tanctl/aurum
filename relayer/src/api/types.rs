@@ -233,15 +233,10 @@ pub struct CrossChainAttestationResponse {
     pub subscription_id: String,
     #[serde(rename = "paymentNumber")]
     pub payment_number: u64,
-    #[serde(rename = "sourceChainId")]
-    pub source_chain_id: u64,
+    #[serde(rename = "chainId")]
+    pub chain_id: u64,
     pub token: String,
     pub amount: String,
-    pub merchant: String,
-    #[serde(rename = "txHash")]
-    pub tx_hash: String,
-    #[serde(rename = "blockNumber")]
-    pub block_number: u64,
     pub timestamp: u64,
     pub verified: bool,
 }

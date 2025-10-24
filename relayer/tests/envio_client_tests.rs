@@ -135,12 +135,9 @@ async fn test_envio_client_remote_queries() {
                             "id": "att-1",
                             "subscriptionId": "0x01",
                             "paymentNumber": 1,
-                            "sourceChainId": 11155111,
+                            "chainId": 11155111,
                             "token": "0x0000000000000000000000000000000000000000",
                             "amount": "100",
-                            "merchant": "0xmerchant",
-                            "txHash": "0xtx",
-                            "blockNumber": 100,
                             "timestamp": 1700000000,
                             "verified": false
                         }

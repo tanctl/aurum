@@ -34,6 +34,7 @@ type MerchantTokenStats = {
   totalRevenue: string;
   totalPayments: number;
   chainId: number;
+  averageTransactionValue: string;
 };
 
 type MerchantTokenStatsData = {
@@ -43,9 +44,9 @@ type MerchantTokenStatsData = {
 type CrossChainAttestation = {
   id: string;
   paymentNumber: number;
-  sourceChainId: number;
-  token: string;
-  amount: string;
+  chainId: number;
+  token?: string | null;
+  amount?: string | null;
   verified: boolean;
   timestamp: string;
 };
@@ -64,6 +65,7 @@ const MERCHANT_TOKEN_STATS_QUERY = /* GraphQL */ `
       totalRevenue
       totalPayments
       chainId
+      averageTransactionValue
     }
   }
 `;
@@ -76,7 +78,7 @@ const CROSS_CHAIN_ATTESTATIONS_QUERY = /* GraphQL */ `
     ) {
       id
       paymentNumber
-      sourceChainId
+      chainId
       token
       amount
       verified

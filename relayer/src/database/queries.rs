@@ -14,7 +14,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use ethers::types::U256;
 use sqlx::{types::BigDecimal, PgPool};
-use std::{str::FromStr, sync::Arc};
+use std::{convert::TryFrom, str::FromStr, sync::Arc};
 use tracing::{info, warn};
 
 #[derive(Clone)]
@@ -1797,8 +1797,18 @@ impl Queries {
     pub async fn get_sync_metadata(&self, chain_id: i64) -> Result<SyncMetadata> {
         if let Some(storage) = self.stub_storage() {
             let mut metadata = storage.sync_metadata.lock().unwrap();
+            let id = match i32::try_from(chain_id) {
+                Ok(value) => value,
+                Err(_) => {
+                    warn!(
+                        "chain_id {} exceeds i32 range; using i32::MAX in stub sync metadata",
+                        chain_id
+                    );
+                    i32::MAX
+                }
+            };
             let entry = metadata.entry(chain_id).or_insert_with(|| SyncMetadata {
-                id: chain_id,
+                id,
                 chain_id,
                 last_synced_block: 0,
                 last_synced_at: Utc::now(),
@@ -1851,8 +1861,18 @@ impl Queries {
     pub async fn update_sync_metadata(&self, chain_id: i64, last_synced_block: i64) -> Result<()> {
         if let Some(storage) = self.stub_storage() {
             let mut metadata = storage.sync_metadata.lock().unwrap();
+            let id = match i32::try_from(chain_id) {
+                Ok(value) => value,
+                Err(_) => {
+                    warn!(
+                        "chain_id {} exceeds i32 range; using i32::MAX in stub sync metadata",
+                        chain_id
+                    );
+                    i32::MAX
+                }
+            };
             let entry = metadata.entry(chain_id).or_insert_with(|| SyncMetadata {
-                id: chain_id,
+                id,
                 chain_id,
                 last_synced_block: 0,
                 last_synced_at: Utc::now(),

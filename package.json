@@ -19,6 +19,7 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "^24.7.1",
     "chai": "^4.5.0",
+    "eslint-plugin-n": "^17.23.1",
     "ethers": "^6.15.0",
     "hardhat": "2.26.3",
     "hardhat-deploy": "^0.12.2",
@@ -33,6 +34,7 @@
     "@avail-project/nexus-widgets": "^0.0.5",
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
     "@openzeppelin/contracts-upgradeable": "^5.4.0",
-    "@openzeppelin/hardhat-upgrades": "^3.9.1"
+    "@openzeppelin/hardhat-upgrades": "^3.9.1",
+    "buffer": "^6.0.3"
   }
 }

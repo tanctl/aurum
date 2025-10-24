@@ -94,7 +94,7 @@ pub struct IntentCache {
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct SyncMetadata {
-    pub id: i64,
+    pub id: i32,
     pub chain_id: i64,
     pub last_synced_block: i64,
     pub last_synced_at: DateTime<Utc>,

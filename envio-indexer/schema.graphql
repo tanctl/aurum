@@ -147,3 +147,67 @@ type SubscribtionManager_TokenRemoved {
   token: String!
 }
 
+type MerchantTokenStats {
+  id: ID!
+  merchant: String!
+  token: String!
+  tokenSymbol: String!
+  chainId: BigInt!
+  totalSubscriptions: BigInt!
+  activeSubscriptions: BigInt!
+  totalRevenue: BigInt!
+  totalPayments: BigInt!
+  averageTransactionValue: BigInt!
+}
+
+type Payment {
+  id: ID!
+  subscriptionId: String!
+  paymentNumber: BigInt!
+  amount: BigInt!
+  fee: BigInt!
+  relayer: String!
+  txHash: String!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  chainId: BigInt!
+  merchant: String!
+  subscriber: String!
+  token: String!
+  tokenSymbol: String!
+  nexusAttestationId: String
+  nexusVerified: Boolean!
+}
+
+type Subscription {
+  id: ID!
+  subscriptionId: String!
+  subscriber: String!
+  merchant: String!
+  token: String!
+  tokenSymbol: String!
+  amount: BigInt!
+  interval: BigInt!
+  maxPayments: BigInt!
+  maxTotalAmount: BigInt!
+  expiry: BigInt!
+  chainId: BigInt!
+  status: String!
+  createdAt: BigInt!
+  startTime: BigInt!
+  paymentsExecuted: BigInt!
+  totalAmountPaid: BigInt!
+  createdAtBlock: BigInt!
+}
+
+type CrossChainAttestation {
+  id: ID!
+  attestationId: String!
+  subscriptionId: String!
+  paymentNumber: BigInt!
+  chainId: BigInt!
+  token: String
+  amount: BigInt
+  verified: Boolean!
+  timestamp: BigInt!
+}

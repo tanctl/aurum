@@ -5,6 +5,7 @@ import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "wagmi";
 
+import "@/polyfills/global-buffer";
 import { config } from "@/lib/wagmi";
 
 const theme = darkTheme({

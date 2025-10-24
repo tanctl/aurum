@@ -656,12 +656,12 @@ pub async fn get_cross_chain_attestations_handler(
             attestation_id: record.id,
             subscription_id: record.subscription_id,
             payment_number: record.payment_number.max(0) as u64,
-            source_chain_id: record.source_chain_id.max(0) as u64,
-            token: tokens::normalize_token_address(&record.token),
-            amount: record.amount,
-            merchant: record.merchant,
-            tx_hash: record.tx_hash,
-            block_number: record.block_number.max(0) as u64,
+            chain_id: record.chain_id.max(0) as u64,
+            token: record
+                .token
+                .map(|value| tokens::normalize_token_address(&value))
+                .unwrap_or_else(|| tokens::normalize_token_address("0x0")),
+            amount: record.amount.unwrap_or_else(|| "0".to_string()),
             timestamp: record.timestamp.max(0) as u64,
             verified: record.verified,
         })
