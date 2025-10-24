@@ -21,6 +21,7 @@ use hypersync_client::{
     Client as HypClient, ClientConfig, StreamConfig,
 };
 use std::{
+    cmp::{max, min},
     convert::TryFrom,
     num::NonZeroU64,
     sync::Arc,
@@ -35,6 +36,8 @@ use url::Url;
 // - Explicit historical range requests and startup syncing leverage HyperSync.
 // - Wherever HyperSync is unavailable, callers fall back to standard data sources.
 const CHUNK_SIZE: u64 = 100_000;
+const RPC_FALLBACK_INITIAL_WINDOW: u64 = 1_000;
+const RPC_FALLBACK_MIN_WINDOW: u64 = 10;
 const PAYMENT_EXECUTED_SIGNATURE: &str =
     "PaymentExecuted(bytes32,address,address,address,uint256,uint256,uint256,address)";
 const SUBSCRIPTION_CREATED_SIGNATURE: &str =
@@ -115,6 +118,7 @@ impl HyperSyncClient {
         let cfg = ClientConfig {
             url: Some(parsed),
             http_req_timeout_millis: NonZeroU64::new(60_000),
+            max_num_retries: Some(0),
             ..ClientConfig::default()
         };
 
@@ -175,9 +179,18 @@ impl HyperSyncClient {
         }
     }
 
+    fn endpoint_for_chain(&self, chain_id: u64) -> Option<&str> {
+        match chain_id {
+            11155111 => Some(self.sepolia_url.as_str()),
+            84532 => Some(self.base_url.as_str()),
+            _ => None,
+        }
+    }
+
     async fn collect_events(
         &self,
         client: Arc<HypClient>,
+        chain_id: u64,
         topic: LogArgument,
         contract_address: &str,
         from_block: u64,
@@ -209,7 +222,26 @@ impl HyperSyncClient {
             .collect_events(query, stream_config)
             .await
             .map_err(|e| {
-                RelayerError::RpcConnectionFailed(format!("hypersync query failed: {}", e))
+                let message = e.to_string();
+                if message.contains("404 Not Found") {
+                    let chain_label = Self::chain_name(chain_id)
+                        .unwrap_or("unknown chain")
+                        .to_string();
+                    let endpoint = self
+                        .endpoint_for_chain(chain_id)
+                        .unwrap_or("unconfigured endpoint");
+                    RelayerError::NotFound(format!(
+                        "HyperSync endpoint {} returned 404 for {}. Check HYPERSYNC_URL_{}.",
+                        endpoint,
+                        chain_label,
+                        chain_label.to_uppercase().replace(' ', "_")
+                    ))
+                } else {
+                    RelayerError::RpcConnectionFailed(format!(
+                        "hypersync query failed: {}",
+                        message
+                    ))
+                }
             })?;
 
         let mut events = Vec::new();
@@ -217,6 +249,75 @@ impl HyperSyncClient {
             events.extend(batch);
         }
         Ok(events)
+    }
+
+    async fn fetch_logs_with_chunking(
+        blockchain_client: &BlockchainClient,
+        chain: &str,
+        contract: EthersAddress,
+        topic: H256,
+        from_block: u64,
+        to_block: u64,
+    ) -> Result<Vec<EthersLog>> {
+        if from_block > to_block {
+            return Ok(Vec::new());
+        }
+
+        let total_span = to_block.saturating_sub(from_block).saturating_add(1);
+        let mut window = min(total_span, RPC_FALLBACK_INITIAL_WINDOW);
+        if window < RPC_FALLBACK_MIN_WINDOW {
+            window = total_span.max(1);
+        }
+
+        let mut start = from_block;
+        let mut logs = Vec::new();
+
+        while start <= to_block {
+            let mut chunk = min(window, to_block.saturating_sub(start).saturating_add(1));
+            if chunk == 0 {
+                break;
+            }
+
+            loop {
+                let end = start.saturating_add(chunk - 1).min(to_block);
+                let filter = Filter::new()
+                    .address(contract)
+                    .from_block(EthersBlockNumber::Number(start.into()))
+                    .to_block(EthersBlockNumber::Number(end.into()))
+                    .topic0(topic);
+
+                match blockchain_client.fetch_logs(chain, filter.clone()).await {
+                    Ok(mut fetched_logs) => {
+                        logs.append(&mut fetched_logs);
+                        let next_window = min(chunk.saturating_mul(2), RPC_FALLBACK_INITIAL_WINDOW);
+                        window = max(next_window, RPC_FALLBACK_MIN_WINDOW);
+                        start = end.saturating_add(1);
+                        break;
+                    }
+                    Err(RelayerError::RpcConnectionFailed(msg)) => {
+                        if chunk > RPC_FALLBACK_MIN_WINDOW {
+                            let reduced = max(chunk / 2, RPC_FALLBACK_MIN_WINDOW);
+                            warn!(
+                                "eth_getLogs window {}-{} on {} failed ({}). Retrying with chunk size {}",
+                                start, end, chain, msg, reduced
+                            );
+                            chunk = reduced
+                                .min(end.saturating_sub(start).saturating_add(1))
+                                .max(1);
+                            continue;
+                        } else {
+                            return Err(RelayerError::RpcConnectionFailed(format!(
+                                "failed to fetch logs on {} even with {} block window: {}",
+                                chain, chunk, msg
+                            )));
+                        }
+                    }
+                    Err(err) => return Err(err),
+                }
+            }
+        }
+
+        Ok(logs)
     }
 
     fn parse_topic_addresses(
@@ -548,6 +649,7 @@ impl HyperSyncClient {
         let events = self
             .collect_events(
                 client,
+                chain_id,
                 self.payment_topic.clone(),
                 contract_address,
                 from_block,
@@ -577,6 +679,7 @@ impl HyperSyncClient {
         let events = self
             .collect_events(
                 client,
+                chain_id,
                 self.subscription_topic.clone(),
                 contract_address,
                 from_block,
@@ -605,8 +708,15 @@ impl HyperSyncClient {
     ) -> Result<Vec<Event>> {
         let topic = Self::topic_from_signature(event_signature)?;
         let client = self.client_for_chain(chain_id)?;
-        self.collect_events(client, topic, contract_address, from_block, to_block)
-            .await
+        self.collect_events(
+            client,
+            chain_id,
+            topic,
+            contract_address,
+            from_block,
+            to_block,
+        )
+        .await
     }
 
     pub async fn sync_large_range_payments(
@@ -1014,13 +1124,15 @@ impl HyperSyncClient {
         to_block: u64,
     ) -> Result<Vec<RawPaymentEvent>> {
         let contract = Self::parse_contract_address_h160(contract_address)?;
-        let filter = Filter::new()
-            .address(contract)
-            .from_block(EthersBlockNumber::Number(from_block.into()))
-            .to_block(EthersBlockNumber::Number(to_block.into()))
-            .topic0(Self::payment_topic_hash());
-
-        let logs = blockchain_client.fetch_logs(chain, filter).await?;
+        let logs = Self::fetch_logs_with_chunking(
+            blockchain_client,
+            chain,
+            contract,
+            Self::payment_topic_hash(),
+            from_block,
+            to_block,
+        )
+        .await?;
         let mut events = Vec::with_capacity(logs.len());
         for log in logs {
             match Self::map_payment_log(chain_id, &log) {
@@ -1040,13 +1152,15 @@ impl HyperSyncClient {
         to_block: u64,
     ) -> Result<Vec<RawSubscriptionEvent>> {
         let contract = Self::parse_contract_address_h160(contract_address)?;
-        let filter = Filter::new()
-            .address(contract)
-            .from_block(EthersBlockNumber::Number(from_block.into()))
-            .to_block(EthersBlockNumber::Number(to_block.into()))
-            .topic0(Self::subscription_topic_hash());
-
-        let logs = blockchain_client.fetch_logs(chain, filter).await?;
+        let logs = Self::fetch_logs_with_chunking(
+            blockchain_client,
+            chain,
+            contract,
+            Self::subscription_topic_hash(),
+            from_block,
+            to_block,
+        )
+        .await?;
         let mut events = Vec::with_capacity(logs.len());
         for log in logs {
             match Self::map_subscription_log(chain_id, &log) {

@@ -44,9 +44,6 @@ async fn create_test_app_state() -> Arc<AppState> {
         envio_explorer_url: None,
         hypersync_url_sepolia: None,
         hypersync_url_base: None,
-        nexus_rpc_url: None,
-        nexus_application_id: None,
-        nexus_signer_key: None,
     };
 
     tokens::register_pyusd_addresses(&[
@@ -81,7 +78,6 @@ async fn create_test_app_state() -> Arc<AppState> {
         avail_client,
         envio_client,
         hypersync_client: None,
-        nexus_client: None,
         metrics: Arc::new(Metrics::new()),
     })
 }

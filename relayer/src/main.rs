@@ -9,7 +9,7 @@ use tracing_subscriber;
 use relayer::api::ApiServer;
 use relayer::{
     AppState, AvailClient, BlockchainClient, Config, Database, EnvioClient, HyperSyncClient,
-    Metrics, NexusClient, Scheduler, SchedulerContext,
+    Metrics, Scheduler, SchedulerContext,
 };
 
 #[tokio::main]
@@ -120,22 +120,6 @@ async fn main() -> Result<()> {
         }
     };
 
-    let nexus_client = if let Some((rpc_url, signer_key, app_id)) = config.nexus_settings() {
-        match NexusClient::new(&rpc_url, &signer_key, &app_id).await {
-            Ok(client) => {
-                info!("nexus client configured for cross-chain attestations");
-                Some(Arc::new(client))
-            }
-            Err(err) => {
-                error!("failed to initialise nexus client: {}", err);
-                None
-            }
-        }
-    } else {
-        info!("nexus configuration not provided; running without cross-chain attestations");
-        None
-    };
-
     // create application state
     let app_state = Arc::new(AppState {
         config: config.clone(),
@@ -144,7 +128,6 @@ async fn main() -> Result<()> {
         avail_client: avail_client.clone(),
         envio_client,
         hypersync_client: hypersync_client.clone(),
-        nexus_client: nexus_client.clone(),
         metrics: metrics.clone(),
     });
 
@@ -156,7 +139,6 @@ async fn main() -> Result<()> {
         blockchain_client: Arc::new(app_state.blockchain_client.clone()),
         avail_client: Arc::new(app_state.avail_client.clone()),
         hypersync_client: app_state.hypersync_client.clone(),
-        nexus_client,
         metrics: metrics.clone(),
         config: config.clone(),
         pool: app_state.database.expect_pool().clone(),

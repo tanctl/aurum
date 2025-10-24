@@ -2,7 +2,7 @@ use ethers::prelude::*;
 
 abigen!(
     SubscriptionManager,
-    "../artifacts/contracts/SubscriptionManager.sol/SubscriptionManager.json"
+    "artifacts/contracts/SubscriptionManager.sol/SubscriptionManager.json"
 );
 
 abigen!(

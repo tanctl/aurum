@@ -1,6 +1,6 @@
 use relayer::{
-    AvailClient, BlockchainClient, Config, Database, HyperSyncClient, Metrics, NexusClient,
-    Scheduler, SchedulerContext,
+    AvailClient, BlockchainClient, Config, Database, HyperSyncClient, Metrics, Scheduler,
+    SchedulerContext,
 };
 use std::sync::Arc;
 
@@ -32,24 +32,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
-    let nexus_client = if let Some((rpc_url, signer_key, app_id)) = config.nexus_settings() {
-        match NexusClient::new(&rpc_url, &signer_key, &app_id).await {
-            Ok(client) => Some(Arc::new(client)),
-            Err(err) => {
-                eprintln!("failed to initialise Nexus client: {err}");
-                None
-            }
-        }
-    } else {
-        None
-    };
-
     let scheduler_context = SchedulerContext {
         queries: Arc::clone(&queries),
         blockchain_client: Arc::clone(&blockchain_client),
         avail_client: Arc::clone(&avail_client),
         hypersync_client,
-        nexus_client,
         metrics,
         config: config.clone(),
         pool: pool.clone(),

@@ -1,6 +1,4 @@
-use crate::avail::{
-    AvailClient, AvailClientMode, NexusClient, NexusClientMode, PaymentAttestation,
-};
+use crate::avail::{AvailClient, AvailClientMode};
 use crate::blockchain::BlockchainClient;
 use crate::database::models::{ExecutionRecord, IntentCache, Subscription, SubscriptionStatus};
 use crate::database::queries::Queries;
@@ -13,7 +11,6 @@ use chrono::Utc;
 use ethers::types::{Address, H256, U256};
 use serde_json::to_value;
 use sqlx::{PgPool, Row};
-use std::convert::TryFrom;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -54,31 +51,6 @@ fn subscription_id_to_bytes(id: &str) -> Result<[u8; 32]> {
         })
 }
 
-fn address_to_bytes20(address: &str) -> Result<[u8; 20]> {
-    if !address.starts_with("0x") || address.len() != 42 {
-        return Err(RelayerError::Validation(
-            "merchant address must be a 20-byte hex string (0x prefixed)".to_string(),
-        ));
-    }
-
-    let bytes = hex::decode(&address[2..]).map_err(|_| {
-        RelayerError::Validation("merchant address contains invalid hex characters".to_string())
-    })?;
-
-    let mut array = [0u8; 20];
-    array.copy_from_slice(&bytes);
-    Ok(array)
-}
-
-fn u256_to_u128(value: U256) -> Result<u128> {
-    if value > U256::from(u128::MAX) {
-        return Err(RelayerError::Validation(
-            "attested amount exceeds u128 capacity for nexus submission".to_string(),
-        ));
-    }
-    Ok(value.as_u128())
-}
-
 #[derive(Debug, Clone)]
 pub enum ValidationResult {
     Valid,
@@ -114,7 +86,6 @@ pub struct Scheduler {
     blockchain_client: Arc<BlockchainClient>,
     avail_client: Arc<AvailClient>,
     hypersync_client: Option<Arc<HyperSyncClient>>,
-    nexus_client: Option<Arc<NexusClient>>,
     metrics: Arc<Metrics>,
     config: Config,
     job_scheduler: JobScheduler,
@@ -126,7 +97,6 @@ pub struct SchedulerContext {
     pub blockchain_client: Arc<BlockchainClient>,
     pub avail_client: Arc<AvailClient>,
     pub hypersync_client: Option<Arc<HyperSyncClient>>,
-    pub nexus_client: Option<Arc<NexusClient>>,
     pub metrics: Arc<Metrics>,
     pub config: Config,
     pub pool: PgPool,
@@ -141,7 +111,6 @@ impl Scheduler {
             blockchain_client,
             avail_client,
             hypersync_client,
-            nexus_client,
             metrics,
             config,
             pool,
@@ -156,7 +125,6 @@ impl Scheduler {
             blockchain_client,
             avail_client,
             hypersync_client,
-            nexus_client,
             metrics,
             config,
             job_scheduler,
@@ -165,7 +133,6 @@ impl Scheduler {
 
         scheduler.run_initial_historical_sync().await;
         scheduler.setup_payment_job().await?;
-        scheduler.setup_nexus_verification_job().await?;
 
         info!("payment scheduler initialized successfully");
         Ok(scheduler)
@@ -205,7 +172,6 @@ impl Scheduler {
         let queries = Arc::clone(&self.queries);
         let blockchain_client = Arc::clone(&self.blockchain_client);
         let avail_client = Arc::clone(&self.avail_client);
-        let nexus_client = self.nexus_client.clone();
         let pool = self.pool.clone();
 
         // use safer cron expression: every 60 seconds with proper timing
@@ -213,7 +179,6 @@ impl Scheduler {
             let queries = Arc::clone(&queries);
             let blockchain_client = Arc::clone(&blockchain_client);
             let avail_client = Arc::clone(&avail_client);
-            let nexus_client = nexus_client.clone();
             let pool = pool.clone();
 
             Box::pin(async move {
@@ -232,7 +197,6 @@ impl Scheduler {
                                     queries,
                                     blockchain_client,
                                     avail_client,
-                                    nexus_client.clone(),
                                     pool.clone(),
                                 ),
                             )
@@ -267,34 +231,6 @@ impl Scheduler {
 
         self.job_scheduler.add(job).await.map_err(|e| {
             RelayerError::InternalError(format!("failed to add payment job: {}", e))
-        })?;
-
-        Ok(())
-    }
-
-    async fn setup_nexus_verification_job(&mut self) -> Result<()> {
-        let Some(nexus_client) = self.nexus_client.clone() else {
-            info!("nexus client not configured; skipping verification job");
-            return Ok(());
-        };
-
-        let queries = Arc::clone(&self.queries);
-        let job = Job::new_async("0 0 * * * *", move |_uuid, _l| {
-            let queries = Arc::clone(&queries);
-            let nexus_client = Arc::clone(&nexus_client);
-
-            Box::pin(async move {
-                if let Err(err) = run_nexus_verification_cycle(&queries, &nexus_client).await {
-                    warn!("nexus verification job encountered error: {}", err);
-                }
-            })
-        })
-        .map_err(|e| {
-            RelayerError::InternalError(format!("failed to create nexus verification job: {}", e))
-        })?;
-
-        self.job_scheduler.add(job).await.map_err(|e| {
-            RelayerError::InternalError(format!("failed to schedule nexus job: {}", e))
         })?;
 
         Ok(())
@@ -791,7 +727,7 @@ impl Scheduler {
             subscription.id
         );
 
-        let mut execution_record = ExecutionRecord {
+        let execution_record = ExecutionRecord {
             id: 0,
             subscription_id: subscription.id.clone(),
             transaction_hash: format!("{:?}", execution_result.transaction_hash),
@@ -808,45 +744,6 @@ impl Scheduler {
             nexus_submitted_at: None,
             token_address: Some(subscription.token_address.clone()),
         };
-
-        if let Some(client) = &self.nexus_client {
-            match build_payment_attestation(subscription, execution_result, &self.blockchain_client)
-                .await
-            {
-                Ok(attestation) => {
-                    let token_hex = format!("0x{}", hex::encode(attestation.token_address));
-                    info!(
-                        "submitting attestation for {} with token {}",
-                        subscription.id, token_hex
-                    );
-
-                    match client.submit_payment_attestation(attestation).await {
-                        Ok(submission) => {
-                            execution_record.nexus_attestation_id =
-                                Some(submission.attestation_id.clone());
-                            execution_record.nexus_submitted_at = Some(submission.submitted_at);
-                            execution_record.nexus_verified =
-                                matches!(client.mode(), NexusClientMode::Stub);
-                            info!(
-                                "submitted nexus attestation {} for subscription {}",
-                                submission.attestation_id, subscription.id
-                            );
-                        }
-                        Err(err) => {
-                            // keep the core payment flow running even if nexus rejects the submission
-                            warn!(
-                                "failed to submit nexus attestation for subscription {}: {}",
-                                subscription.id, err
-                            );
-                        }
-                    }
-                }
-                Err(err) => warn!(
-                    "skipping nexus attestation for subscription {}: {}",
-                    subscription.id, err
-                ),
-            }
-        }
 
         self.queries
             .insert_execution_record(&execution_record)
@@ -934,7 +831,6 @@ async fn process_payments_job_safe(
     queries: Arc<Queries>,
     blockchain_client: Arc<BlockchainClient>,
     avail_client: Arc<AvailClient>,
-    nexus_client: Option<Arc<NexusClient>>,
     pool: PgPool,
 ) -> Result<()> {
     info!("starting safe payment processing with resource limits");
@@ -975,7 +871,6 @@ async fn process_payments_job_safe(
                 &queries,
                 &blockchain_client,
                 &avail_client,
-                &nexus_client,
                 &pool,
             )
             .await
@@ -1012,83 +907,11 @@ async fn process_payments_job_safe(
     Ok(())
 }
 
-async fn run_nexus_verification_cycle(
-    queries: &Arc<Queries>,
-    nexus_client: &Arc<NexusClient>,
-) -> Result<()> {
-    let pending = queries.get_pending_nexus_attestations(50).await?;
-
-    if pending.is_empty() {
-        debug!("nexus verification job found no pending attestations");
-        return Ok(());
-    }
-
-    info!("verifying {} pending attestations via nexus", pending.len());
-
-    for att in pending {
-        match nexus_client
-            .query_payment_attestation(&att.nexus_attestation_id)
-            .await
-        {
-            Ok(Some(status)) => {
-                let source_chain_id =
-                    i32::try_from(status.attestation.source_chain_id).unwrap_or(i32::MAX);
-
-                if let Err(err) = queries
-                    .insert_cross_chain_verification(
-                        &att.subscription_id,
-                        source_chain_id,
-                        source_chain_id,
-                        Some(&att.nexus_attestation_id),
-                        status.verified,
-                    )
-                    .await
-                {
-                    warn!(
-                        "failed to record cross-chain verification for attestation {}: {}",
-                        att.nexus_attestation_id, err
-                    );
-                }
-
-                if status.verified {
-                    queries
-                        .mark_nexus_attestation_verified(&att.nexus_attestation_id)
-                        .await?;
-                    info!(
-                        "nexus attestation {} verified for subscription {}",
-                        att.nexus_attestation_id, att.subscription_id
-                    );
-                } else {
-                    debug!(
-                        "attestation {} pending verification on nexus",
-                        att.nexus_attestation_id
-                    );
-                }
-            }
-            Ok(None) => {
-                debug!(
-                    "attestation {} not yet available on nexus",
-                    att.nexus_attestation_id
-                );
-            }
-            Err(err) => {
-                warn!(
-                    "failed to query nexus attestation {}: {}",
-                    att.nexus_attestation_id, err
-                );
-            }
-        }
-    }
-
-    Ok(())
-}
-
 async fn process_single_subscription_job_safe(
     subscription: &Subscription,
     queries: &Arc<Queries>,
     blockchain_client: &Arc<BlockchainClient>,
     avail_client: &Arc<AvailClient>,
-    nexus_client: &Option<Arc<NexusClient>>,
     pool: &PgPool,
 ) -> Result<bool> {
     info!(
@@ -1139,14 +962,7 @@ async fn process_single_subscription_job_safe(
             let execution_result =
                 execute_payment_on_chain_job_safe(subscription, blockchain_client).await?;
 
-            record_successful_execution_job_safe(
-                subscription,
-                &execution_result,
-                queries,
-                blockchain_client,
-                nexus_client,
-            )
-            .await?;
+            record_successful_execution_job_safe(subscription, &execution_result, queries).await?;
 
             info!(
                 "successfully executed payment for subscription {}, tx: {:?}",
@@ -1467,15 +1283,13 @@ async fn record_successful_execution_job_safe(
     subscription: &Subscription,
     execution_result: &ExecutionResult,
     queries: &Arc<Queries>,
-    blockchain_client: &Arc<BlockchainClient>,
-    nexus_client: &Option<Arc<NexusClient>>,
 ) -> Result<()> {
     info!(
         "recording successful execution for subscription {}",
         subscription.id
     );
 
-    let mut execution_record = ExecutionRecord {
+    let execution_record = ExecutionRecord {
         id: 0,
         subscription_id: subscription.id.clone(),
         transaction_hash: format!("{:?}", execution_result.transaction_hash),
@@ -1492,47 +1306,6 @@ async fn record_successful_execution_job_safe(
         nexus_submitted_at: None,
         token_address: Some(subscription.token_address.clone()),
     };
-
-    if let Some(nexus_client) = nexus_client {
-        match build_payment_attestation(subscription, execution_result, blockchain_client).await {
-            Ok(attestation) => {
-                let token_hex = format!("0x{}", hex::encode(attestation.token_address));
-                info!(
-                    "submitting attestation for {} with token {}",
-                    subscription.id, token_hex
-                );
-
-                match nexus_client.submit_payment_attestation(attestation).await {
-                    Ok(submission) => {
-                        execution_record.nexus_attestation_id =
-                            Some(submission.attestation_id.clone());
-                        execution_record.nexus_submitted_at = Some(submission.submitted_at);
-                        execution_record.nexus_verified =
-                            matches!(nexus_client.mode(), NexusClientMode::Stub);
-                        info!(
-                            "submitted payment attestation to nexus (id={}, chain={}, subscription={})",
-                            submission.attestation_id,
-                            subscription.chain,
-                            subscription.id
-                        );
-                    }
-                    Err(err) => {
-                        warn!(
-                            "failed to submit payment attestation for subscription {}: {}",
-                            subscription.id, err
-                        );
-                    }
-                }
-            }
-            Err(err) => {
-                warn!(
-                    "skipping nexus attestation for subscription {} due to build error: {}",
-                    subscription.id, err
-                );
-            }
-        }
-    }
-
     let new_payments_made = subscription
         .executed_payments
         .checked_add(1)
@@ -1552,49 +1325,6 @@ async fn record_successful_execution_job_safe(
 
     info!("execution record saved, subscription updated for next payment");
     Ok(())
-}
-
-async fn build_payment_attestation(
-    subscription: &Subscription,
-    execution_result: &ExecutionResult,
-    blockchain_client: &Arc<BlockchainClient>,
-) -> Result<PaymentAttestation> {
-    let subscription_bytes = subscription_id_to_bytes(&subscription.id)?;
-    let merchant_bytes = address_to_bytes20(&subscription.merchant)?;
-    // embeds the erc20 address into the attestation so nexus can verify the payment token
-    let token_bytes = address_to_bytes20(&subscription.token_address)?;
-    let tx_hash_bytes = execution_result.transaction_hash.as_bytes();
-    let mut tx_hash = [0u8; 32];
-    tx_hash.copy_from_slice(tx_hash_bytes);
-
-    let amount_u128 = u256_to_u128(execution_result.payment_amount)?;
-    let source_chain_id = blockchain_client.chain_id(&subscription.chain)?;
-
-    let timestamp = match blockchain_client
-        .get_block_timestamp(&subscription.chain, execution_result.block_number)
-        .await
-    {
-        Ok(value) => value,
-        Err(err) => {
-            warn!(
-                "failed to fetch block timestamp for attestation (subscription={}, block={}): {}",
-                subscription.id, execution_result.block_number, err
-            );
-            Utc::now().timestamp().max(0) as u64
-        }
-    };
-
-    Ok(PaymentAttestation {
-        source_chain_id,
-        subscription_id: subscription_bytes,
-        payment_number: execution_result.payment_number,
-        amount: amount_u128,
-        merchant: merchant_bytes,
-        token_address: token_bytes,
-        tx_hash,
-        block_number: execution_result.block_number,
-        timestamp,
-    })
 }
 
 async fn ensure_intent_cached_job_safe(
@@ -1795,9 +1525,6 @@ mod tests {
             avail_secret_uri: None,
             hypersync_url_sepolia: None,
             hypersync_url_base: None,
-            nexus_rpc_url: None,
-            nexus_application_id: None,
-            nexus_signer_key: None,
         };
 
         tokens::register_pyusd_addresses(&[
@@ -1895,189 +1622,5 @@ mod tests {
                 assert!(count <= 3);
             }
         }
-    }
-
-    #[tokio::test]
-    async fn test_record_successful_execution_records_nexus_stub() {
-        let storage = Arc::new(StubStorage::default());
-        let queries = Arc::new(Queries::new_stub(Arc::clone(&storage)));
-        let config = stub_config();
-        let blockchain_client = Arc::new(BlockchainClient::new(&config).await.unwrap());
-        let nexus_client = Some(Arc::new(NexusClient::new_stub()));
-
-        let subscription = create_test_subscription();
-        queries
-            .insert_subscription(&subscription)
-            .await
-            .expect("stub insert should succeed");
-
-        let payment_amount = U256::from_dec_str(&subscription.amount).unwrap();
-        let execution_result = ExecutionResult {
-            transaction_hash: H256::from_low_u64_be(1),
-            block_number: 12345,
-            gas_used: U256::from(21_000u64),
-            gas_price: U256::from(1_000_000_000u64),
-            fee_paid: U256::from(5_000u64),
-            payment_amount,
-            payment_number: 1,
-        };
-
-        record_successful_execution_job_safe(
-            &subscription,
-            &execution_result,
-            &queries,
-            &blockchain_client,
-            &nexus_client,
-        )
-        .await
-        .expect("recording execution should succeed");
-
-        {
-            let records = storage.execution_records.lock().unwrap();
-            assert_eq!(records.len(), 1);
-            let record = &records[0];
-            assert!(record.nexus_attestation_id.is_some());
-            assert!(record.nexus_verified);
-            assert_eq!(record.payment_number, 1);
-        }
-
-        {
-            let subscriptions = storage.subscriptions.lock().unwrap();
-            let stored = subscriptions
-                .get(&subscription.id)
-                .expect("subscription should be updated");
-            assert_eq!(stored.executed_payments, 1);
-            assert_eq!(stored.failure_count, 0);
-            assert_eq!(
-                stored.total_paid,
-                execution_result.payment_amount.to_string()
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn test_run_nexus_verification_cycle_marks_verified() {
-        if std::net::TcpListener::bind("127.0.0.1:0").is_err() {
-            eprintln!("skipping nexus verification cycle test due to restricted networking");
-            return;
-        }
-
-        let storage = Arc::new(StubStorage::default());
-        let queries = Arc::new(Queries::new_stub(Arc::clone(&storage)));
-        let config = stub_config();
-        let blockchain_client = Arc::new(BlockchainClient::new(&config).await.unwrap());
-
-        let mut server = Server::new_async().await;
-
-        let status_mock = server
-            .mock("GET", "/status")
-            .with_status(200)
-            .with_body("{}")
-            .create_async()
-            .await;
-
-        let submit_mock = server
-            .mock("POST", "/attestations")
-            .match_header("content-type", "application/json")
-            .with_status(200)
-            .with_body(json!({ "attestationId": "att-remote-1" }).to_string())
-            .create_async()
-            .await;
-
-        let subscription = create_test_subscription();
-        queries
-            .insert_subscription(&subscription)
-            .await
-            .expect("stub insert should succeed");
-
-        let payment_amount = U256::from_dec_str(&subscription.amount).unwrap();
-        let execution_result = ExecutionResult {
-            transaction_hash: H256::from_low_u64_be(2),
-            block_number: 54321,
-            gas_used: U256::from(21_000u64),
-            gas_price: U256::from(1_500_000_000u64),
-            fee_paid: U256::from(5_000u64),
-            payment_amount,
-            payment_number: 1,
-        };
-
-        let nexus_client = Arc::new(
-            NexusClient::new(&server.url(), "0x00112233445566778899aabbccddeeff", "aurum")
-                .await
-                .expect("remote nexus client should initialize"),
-        );
-
-        let subscription_bytes = subscription_id_to_bytes(&subscription.id).unwrap();
-        let merchant_bytes = address_to_bytes20(&subscription.merchant).unwrap();
-        let tx_hash_hex = format!(
-            "0x{}",
-            hex::encode(execution_result.transaction_hash.as_bytes())
-        );
-        let subscription_hex = format!("0x{}", hex::encode(subscription_bytes));
-        let merchant_hex = format!("0x{}", hex::encode(merchant_bytes));
-        let token_bytes = address_to_bytes20(&subscription.token_address).unwrap();
-        let token_hex = format!("0x{}", hex::encode(token_bytes));
-        let attestation_payload = json!({
-            "sourceChainId": 11155111u64,
-            "subscriptionId": subscription_hex,
-            "paymentNumber": execution_result.payment_number,
-            "amount": execution_result.payment_amount.as_u128(),
-            "merchant": merchant_hex,
-            "tokenAddress": token_hex,
-            "txHash": tx_hash_hex,
-            "blockNumber": execution_result.block_number,
-            "timestamp": Utc::now().timestamp().max(0) as u64
-        });
-
-        let query_mock = server
-            .mock("GET", "/attestations/att-remote-1")
-            .with_status(200)
-            .with_body(
-                json!({
-                    "attestation": attestation_payload,
-                    "verified": true
-                })
-                .to_string(),
-            )
-            .create_async()
-            .await;
-
-        let nexus_option = Some(Arc::clone(&nexus_client));
-        record_successful_execution_job_safe(
-            &subscription,
-            &execution_result,
-            &queries,
-            &blockchain_client,
-            &nexus_option,
-        )
-        .await
-        .expect("recording execution should succeed");
-
-        {
-            let records = storage.execution_records.lock().unwrap();
-            assert_eq!(records.len(), 1);
-            assert!(records[0].nexus_attestation_id.is_some());
-            assert!(!records[0].nexus_verified);
-        }
-
-        run_nexus_verification_cycle(&queries, &nexus_client)
-            .await
-            .expect("verification cycle should succeed");
-
-        {
-            let records = storage.execution_records.lock().unwrap();
-            assert!(records[0].nexus_verified);
-        }
-
-        {
-            let verifications = storage.cross_chain_verifications.lock().unwrap();
-            assert_eq!(verifications.len(), 1);
-            assert!(verifications[0].verified);
-            assert_eq!(verifications[0].subscription_id, subscription.id);
-        }
-
-        drop(status_mock);
-        drop(submit_mock);
-        drop(query_mock);
     }
 }

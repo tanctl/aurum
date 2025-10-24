@@ -101,26 +101,6 @@ pub struct SyncMetadata {
     pub sync_method: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct PendingNexusAttestation {
-    pub id: i64,
-    pub subscription_id: String,
-    pub transaction_hash: String,
-    pub nexus_attestation_id: String,
-    pub chain: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct CrossChainVerificationRecord {
-    pub id: i64,
-    pub subscription_id: String,
-    pub source_chain_id: i32,
-    pub query_chain_id: i32,
-    pub attestation_id: Option<String>,
-    pub verified: bool,
-    pub queried_at: DateTime<Utc>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SubscriptionStatus {
     Active,

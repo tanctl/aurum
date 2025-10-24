@@ -16,11 +16,7 @@ pub mod metrics;
 pub mod scheduler;
 pub mod utils;
 
-pub use avail::{
-    AttestationStatus, AttestationSubmission, AvailClient, AvailClientMode,
-    CrossChainVerificationSummary, NexusClient, NexusClientMode, NexusHealthStatus,
-    PaymentAttestation,
-};
+pub use avail::{AvailClient, AvailClientMode};
 pub use blockchain::BlockchainClient;
 pub use config::Config;
 pub use database::Database;
@@ -38,6 +34,5 @@ pub struct AppState {
     pub avail_client: avail::AvailClient,
     pub envio_client: EnvioClient,
     pub hypersync_client: Option<std::sync::Arc<HyperSyncClient>>,
-    pub nexus_client: Option<std::sync::Arc<NexusClient>>,
     pub metrics: std::sync::Arc<Metrics>,
 }

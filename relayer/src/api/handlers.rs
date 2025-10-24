@@ -6,7 +6,6 @@ use chrono::Utc;
 use ethers::types::{Address, U256};
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::convert::TryFrom;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
@@ -588,52 +587,6 @@ pub async fn get_merchant_stats_handler(
 
     Ok(Json(stats_response))
 }
-
-pub async fn verify_cross_chain_handler(
-    State(app_state): State<Arc<AppState>>,
-    Json(request): Json<CrossChainVerificationRequest>,
-) -> Result<Json<CrossChainVerificationResponse>> {
-    let nexus_client = app_state
-        .nexus_client
-        .as_ref()
-        .ok_or_else(|| RelayerError::InternalError("nexus client not configured".to_string()))?;
-
-    ValidationService::validate_subscription_id_format(&request.subscription_id)?;
-    let subscription_bytes = subscription_hex_to_bytes(&request.subscription_id)?;
-
-    let summary = nexus_client
-        .verify_cross_chain_subscription(&subscription_bytes, request.source_chain_id)
-        .await?;
-
-    let verified = summary.exists && summary.payment_count > 0;
-    let response = CrossChainVerificationResponse {
-        verified,
-        payment_count: summary.payment_count,
-        total_amount: summary.total_amount.to_string(),
-        last_payment_block: summary.last_payment_block,
-    };
-
-    if let Err(err) = app_state
-        .database
-        .queries()
-        .insert_cross_chain_verification(
-            &request.subscription_id,
-            i32::try_from(request.source_chain_id).unwrap_or(i32::MAX),
-            i32::try_from(request.source_chain_id).unwrap_or(i32::MAX),
-            None,
-            response.verified,
-        )
-        .await
-    {
-        warn!(
-            "failed to persist cross-chain verification for {}: {}",
-            request.subscription_id, err
-        );
-    }
-
-    Ok(Json(response))
-}
-
 pub async fn get_cross_chain_attestations_handler(
     Path(subscription_id): Path<String>,
     State(app_state): State<Arc<AppState>>,
@@ -731,40 +684,7 @@ pub async fn health_check_handler(
         },
     };
 
-    let nexus_start = std::time::Instant::now();
-    let (nexus_health, nexus_latest_block) = match app_state.nexus_client.as_ref() {
-        Some(client) => match client.health_check().await {
-            Ok(status) => (
-                ServiceStatus {
-                    healthy: status.healthy,
-                    response_time_ms: Some(nexus_start.elapsed().as_millis() as u64),
-                    error: None,
-                },
-                status.latest_block,
-            ),
-            Err(err) => (
-                ServiceStatus {
-                    healthy: false,
-                    response_time_ms: None,
-                    error: Some(err.to_string()),
-                },
-                None,
-            ),
-        },
-        None => (
-            ServiceStatus {
-                healthy: false,
-                response_time_ms: None,
-                error: Some("Nexus client not configured".to_string()),
-            },
-            None,
-        ),
-    };
-
-    let overall_healthy = database_health.healthy
-        && rpc_health.healthy
-        && envio_health.healthy
-        && (nexus_health.healthy || app_state.nexus_client.is_none());
+    let overall_healthy = database_health.healthy && rpc_health.healthy && envio_health.healthy;
     let status = if overall_healthy {
         "healthy"
     } else {
@@ -778,9 +698,7 @@ pub async fn health_check_handler(
             database: database_health,
             rpc: rpc_health,
             envio: envio_health,
-            nexus: nexus_health,
         },
-        nexus_latest_block,
     };
 
     info!("health check completed - status: {}", status);
@@ -844,22 +762,6 @@ fn token_stats_to_response(stats: &TokenStats) -> TokenStatsResponse {
         average_transaction_value: stats.average_transaction_value.clone(),
         chain_id: stats.chain_id,
     }
-}
-
-fn subscription_hex_to_bytes(id: &str) -> Result<[u8; 32]> {
-    if !id.starts_with("0x") || id.len() != 66 {
-        return Err(RelayerError::Validation(
-            "subscription id must be 32-byte hex string".to_string(),
-        ));
-    }
-
-    let bytes = hex::decode(&id[2..]).map_err(|_| {
-        RelayerError::Validation("subscription id contains invalid hex".to_string())
-    })?;
-
-    let mut array = [0u8; 32];
-    array.copy_from_slice(&bytes);
-    Ok(array)
 }
 
 pub async fn metrics_handler(

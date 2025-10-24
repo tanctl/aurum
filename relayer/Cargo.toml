@@ -18,7 +18,7 @@ sqlx-prepare-cli = ["pg-embed"]
 [dependencies]
 tokio = { version = "1.35", features = ["full"] }
 axum = "0.7"
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "json", "macros", "bigdecimal", "migrate"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "chrono", "json", "macros", "bigdecimal", "migrate"] }
 ethers = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -42,7 +42,6 @@ avail-rust-client = { version = "0.4.1-rc.1", default-features = false, features
 pg-embed = { version = "0.7.1", default-features = false, features = ["rt_tokio"], optional = true }
 hypersync-client = "0.7"
 url = "2.4"
-nexus-sdk = "0.0.0"
 
 [[example]]
 name = "blockchain_usage"

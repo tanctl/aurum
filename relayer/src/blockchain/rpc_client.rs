@@ -608,6 +608,8 @@ impl RealBlockchainClient {
 
         let (provider, _) = self.get_provider_and_contracts(chain)?;
 
+        let provider = Arc::clone(provider);
+
         let receipt = provider
             .get_transaction_receipt(tx_hash)
             .await
@@ -628,6 +630,8 @@ impl RealBlockchainClient {
 
     async fn fetch_logs(&self, chain: &str, filter: Filter) -> Result<Vec<EthersLog>> {
         let (provider, _) = self.get_provider_and_contracts(chain)?;
+        let provider = Arc::clone(provider);
+
         provider.get_logs(&filter).await.map_err(|e| {
             RelayerError::RpcConnectionFailed(format!("failed to fetch logs on {}: {}", chain, e))
         })
@@ -637,6 +641,8 @@ impl RealBlockchainClient {
         info!("fetching current block number for chain {}", chain);
 
         let (provider, _) = self.get_provider_and_contracts(chain)?;
+
+        let provider = Arc::clone(provider);
 
         let block_number = provider.get_block_number().await.map_err(|e| {
             RelayerError::RpcConnectionFailed(format!("failed to get block number: {}", e))
@@ -653,6 +659,8 @@ impl RealBlockchainClient {
         );
 
         let (provider, _) = self.get_provider_and_contracts(chain)?;
+        let provider = Arc::clone(provider);
+
         let block = provider
             .get_block(block_number)
             .await
@@ -677,6 +685,8 @@ impl RealBlockchainClient {
 
         let (provider, _) = self.get_provider_and_contracts(chain)?;
 
+        let provider = Arc::clone(provider);
+
         let chain_id = provider.get_chainid().await.map_err(|e| {
             RelayerError::RpcConnectionFailed(format!("failed to get chain id: {}", e))
         })?;
@@ -695,6 +705,8 @@ impl RealBlockchainClient {
         );
 
         let (_, subscription_manager) = self.get_provider_and_contracts(chain)?;
+
+        let subscription_manager = subscription_manager.clone();
 
         let payment_count = subscription_manager
             .executed_payments(subscription_id)

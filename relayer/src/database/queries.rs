@@ -2,8 +2,7 @@
 
 use super::{
     models::{
-        CrossChainVerificationRecord, Execution, ExecutionRecord, IntentCache,
-        PendingNexusAttestation, Subscription, SubscriptionStatus, SyncMetadata,
+        Execution, ExecutionRecord, IntentCache, Subscription, SubscriptionStatus, SyncMetadata,
     },
     StubStorage,
 };
@@ -1986,129 +1985,5 @@ impl Queries {
         .await?;
 
         Ok(result.rows_affected() > 0)
-    }
-
-    pub async fn get_pending_nexus_attestations(
-        &self,
-        limit: i64,
-    ) -> Result<Vec<PendingNexusAttestation>> {
-        if let Some(storage) = self.stub_storage() {
-            let records = storage.execution_records.lock().unwrap();
-            let mut pending: Vec<PendingNexusAttestation> = records
-                .iter()
-                .filter(|record| {
-                    record
-                        .nexus_attestation_id
-                        .as_ref()
-                        .map(|_| !record.nexus_verified)
-                        .unwrap_or(false)
-                })
-                .take(limit as usize)
-                .map(|record| PendingNexusAttestation {
-                    id: record.id,
-                    subscription_id: record.subscription_id.clone(),
-                    transaction_hash: record.transaction_hash.clone(),
-                    nexus_attestation_id: record.nexus_attestation_id.clone().unwrap_or_default(),
-                    chain: record.chain.clone(),
-                })
-                .collect();
-            pending.sort_by_key(|entry| entry.id);
-            return Ok(pending);
-        }
-
-        let pool = self.require_postgres("get_pending_nexus_attestations")?;
-        let rows = sqlx::query_as::<_, PendingNexusAttestation>(
-            "
-            SELECT id, subscription_id, transaction_hash, nexus_attestation_id, chain
-            FROM executions
-            WHERE nexus_attestation_id IS NOT NULL AND nexus_verified = false
-            ORDER BY executed_at ASC
-            LIMIT $1
-            ",
-        )
-        .bind(limit)
-        .fetch_all(pool)
-        .await?;
-
-        Ok(rows)
-    }
-
-    pub async fn mark_nexus_attestation_verified(&self, attestation_id: &str) -> Result<()> {
-        if let Some(storage) = self.stub_storage() {
-            let mut records = storage.execution_records.lock().unwrap();
-            for record in records.iter_mut() {
-                if record
-                    .nexus_attestation_id
-                    .as_deref()
-                    .map(|id| id == attestation_id)
-                    .unwrap_or(false)
-                {
-                    record.nexus_verified = true;
-                }
-            }
-
-            let mut executions = storage.executions.lock().unwrap();
-            for execution in executions.iter_mut() {
-                if execution
-                    .nexus_attestation_id
-                    .as_deref()
-                    .map(|id| id == attestation_id)
-                    .unwrap_or(false)
-                {
-                    execution.nexus_verified = true;
-                }
-            }
-
-            return Ok(());
-        }
-
-        let pool = self.require_postgres("mark_nexus_attestation_verified")?;
-        sqlx::query("UPDATE executions SET nexus_verified = true WHERE nexus_attestation_id = $1")
-            .bind(attestation_id)
-            .execute(pool)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn insert_cross_chain_verification(
-        &self,
-        subscription_id: &str,
-        source_chain_id: i32,
-        query_chain_id: i32,
-        attestation_id: Option<&str>,
-        verified: bool,
-    ) -> Result<()> {
-        if let Some(storage) = self.stub_storage() {
-            let mut records = storage.cross_chain_verifications.lock().unwrap();
-            let record = CrossChainVerificationRecord {
-                id: (records.len() + 1) as i64,
-                subscription_id: subscription_id.to_string(),
-                source_chain_id,
-                query_chain_id,
-                attestation_id: attestation_id.map(|id| id.to_string()),
-                verified,
-                queried_at: Utc::now(),
-            };
-            records.push(record);
-            return Ok(());
-        }
-
-        let pool = self.require_postgres("insert_cross_chain_verification")?;
-        sqlx::query(
-            "
-            INSERT INTO cross_chain_verifications (
-                subscription_id, source_chain_id, query_chain_id, attestation_id, verified, queried_at
-            ) VALUES ($1, $2, $3, $4, $5, NOW())
-            ",
-        )
-        .bind(subscription_id)
-        .bind(source_chain_id)
-        .bind(query_chain_id)
-        .bind(attestation_id)
-        .bind(verified)
-        .execute(pool)
-        .await?;
-
-        Ok(())
     }
 }
