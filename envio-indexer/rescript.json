@@ -1,0 +1,21 @@
+{
+  "name": "envio-indexer",
+  "version": "0.1.0",
+  "sources": [
+    {
+      "dir": "generated/src",
+      "subdirs": true
+    }
+  ],
+  "package-specs": {
+    "module": "commonjs",
+    "in-source": true
+  },
+  "suffix": ".res.js",
+  "jsx": {
+    "version": 4
+  },
+  "gentypeconfig": {
+    "generatedFileExtension": ".gen.ts"
+  }
+}

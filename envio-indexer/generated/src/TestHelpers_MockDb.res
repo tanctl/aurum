@@ -69,6 +69,13 @@ type rec t = {
 // Each user defined entity will be in this record with all the store or "mockdb" operators
 @genType
 and entities = {
+    @as("CrossChainAttestation") crossChainAttestation: entityStoreOperations<Entities.CrossChainAttestation.t>,
+    @as("IndexerMeta") indexerMeta: entityStoreOperations<Entities.IndexerMeta.t>,
+    @as("Intent") intent: entityStoreOperations<Entities.Intent.t>,
+    @as("MerchantPerformance") merchantPerformance: entityStoreOperations<Entities.MerchantPerformance.t>,
+    @as("MerchantTokenStats") merchantTokenStats: entityStoreOperations<Entities.MerchantTokenStats.t>,
+    @as("Payment") payment: entityStoreOperations<Entities.Payment.t>,
+    @as("RelayerPerformance") relayerPerformance: entityStoreOperations<Entities.RelayerPerformance.t>,
     @as("RelayerRegistry_EmergencySlash") relayerRegistry_EmergencySlash: entityStoreOperations<Entities.RelayerRegistry_EmergencySlash.t>,
     @as("RelayerRegistry_ExecutionRecorded") relayerRegistry_ExecutionRecorded: entityStoreOperations<Entities.RelayerRegistry_ExecutionRecorded.t>,
     @as("RelayerRegistry_OwnershipTransferred") relayerRegistry_OwnershipTransferred: entityStoreOperations<Entities.RelayerRegistry_OwnershipTransferred.t>,
@@ -78,6 +85,7 @@ and entities = {
     @as("RelayerRegistry_RelayerUnregistered") relayerRegistry_RelayerUnregistered: entityStoreOperations<Entities.RelayerRegistry_RelayerUnregistered.t>,
     @as("RelayerRegistry_SlashingParametersUpdated") relayerRegistry_SlashingParametersUpdated: entityStoreOperations<Entities.RelayerRegistry_SlashingParametersUpdated.t>,
     @as("RelayerRegistry_WithdrawalRequested") relayerRegistry_WithdrawalRequested: entityStoreOperations<Entities.RelayerRegistry_WithdrawalRequested.t>,
+    @as("SubscriberStats") subscriberStats: entityStoreOperations<Entities.SubscriberStats.t>,
     @as("SubscribtionManager_CrossChainPaymentInitiated") subscribtionManager_CrossChainPaymentInitiated: entityStoreOperations<Entities.SubscribtionManager_CrossChainPaymentInitiated.t>,
     @as("SubscribtionManager_NexusAttestationSubmitted") subscribtionManager_NexusAttestationSubmitted: entityStoreOperations<Entities.SubscribtionManager_NexusAttestationSubmitted.t>,
     @as("SubscribtionManager_NexusAttestationVerified") subscribtionManager_NexusAttestationVerified: entityStoreOperations<Entities.SubscribtionManager_NexusAttestationVerified.t>,
@@ -90,6 +98,7 @@ and entities = {
     @as("SubscribtionManager_SubscriptionResumed") subscribtionManager_SubscriptionResumed: entityStoreOperations<Entities.SubscribtionManager_SubscriptionResumed.t>,
     @as("SubscribtionManager_TokenAdded") subscribtionManager_TokenAdded: entityStoreOperations<Entities.SubscribtionManager_TokenAdded.t>,
     @as("SubscribtionManager_TokenRemoved") subscribtionManager_TokenRemoved: entityStoreOperations<Entities.SubscribtionManager_TokenRemoved.t>,
+    @as("Subscription") subscription: entityStoreOperations<Entities.Subscription.t>,
   }
 // User defined entities always have a string for an id which is used as the
 // key for entity stores
@@ -302,6 +311,104 @@ let rec makeWithInMemoryStore: InMemoryStore.t => t = (inMemoryStore: InMemorySt
   )
 
   let entities = {
+      crossChainAttestation: {
+        makeStoreOperatorEntity(
+          ~inMemoryStore,
+          ~makeMockDb=makeWithInMemoryStore,
+          ~getStore=db => db->InMemoryStore.getInMemTable(
+            ~entityConfig=module(Entities.CrossChainAttestation)->Entities.entityModToInternal,
+          )->(
+            Utils.magic: InMemoryTable.Entity.t<Internal.entity> => InMemoryTable.Entity.t<
+              Entities.CrossChainAttestation.t,
+            >
+          ),
+          ~getKey=({id}) => id,
+        )
+      },
+      indexerMeta: {
+        makeStoreOperatorEntity(
+          ~inMemoryStore,
+          ~makeMockDb=makeWithInMemoryStore,
+          ~getStore=db => db->InMemoryStore.getInMemTable(
+            ~entityConfig=module(Entities.IndexerMeta)->Entities.entityModToInternal,
+          )->(
+            Utils.magic: InMemoryTable.Entity.t<Internal.entity> => InMemoryTable.Entity.t<
+              Entities.IndexerMeta.t,
+            >
+          ),
+          ~getKey=({id}) => id,
+        )
+      },
+      intent: {
+        makeStoreOperatorEntity(
+          ~inMemoryStore,
+          ~makeMockDb=makeWithInMemoryStore,
+          ~getStore=db => db->InMemoryStore.getInMemTable(
+            ~entityConfig=module(Entities.Intent)->Entities.entityModToInternal,
+          )->(
+            Utils.magic: InMemoryTable.Entity.t<Internal.entity> => InMemoryTable.Entity.t<
+              Entities.Intent.t,
+            >
+          ),
+          ~getKey=({id}) => id,
+        )
+      },
+      merchantPerformance: {
+        makeStoreOperatorEntity(
+          ~inMemoryStore,
+          ~makeMockDb=makeWithInMemoryStore,
+          ~getStore=db => db->InMemoryStore.getInMemTable(
+            ~entityConfig=module(Entities.MerchantPerformance)->Entities.entityModToInternal,
+          )->(
+            Utils.magic: InMemoryTable.Entity.t<Internal.entity> => InMemoryTable.Entity.t<
+              Entities.MerchantPerformance.t,
+            >
+          ),
+          ~getKey=({id}) => id,
+        )
+      },
+      merchantTokenStats: {
+        makeStoreOperatorEntity(
+          ~inMemoryStore,
+          ~makeMockDb=makeWithInMemoryStore,
+          ~getStore=db => db->InMemoryStore.getInMemTable(
+            ~entityConfig=module(Entities.MerchantTokenStats)->Entities.entityModToInternal,
+          )->(
+            Utils.magic: InMemoryTable.Entity.t<Internal.entity> => InMemoryTable.Entity.t<
+              Entities.MerchantTokenStats.t,
+            >
+          ),
+          ~getKey=({id}) => id,
+        )
+      },
+      payment: {
+        makeStoreOperatorEntity(
+          ~inMemoryStore,
+          ~makeMockDb=makeWithInMemoryStore,
+          ~getStore=db => db->InMemoryStore.getInMemTable(
+            ~entityConfig=module(Entities.Payment)->Entities.entityModToInternal,
+          )->(
+            Utils.magic: InMemoryTable.Entity.t<Internal.entity> => InMemoryTable.Entity.t<
+              Entities.Payment.t,
+            >
+          ),
+          ~getKey=({id}) => id,
+        )
+      },
+      relayerPerformance: {
+        makeStoreOperatorEntity(
+          ~inMemoryStore,
+          ~makeMockDb=makeWithInMemoryStore,
+          ~getStore=db => db->InMemoryStore.getInMemTable(
+            ~entityConfig=module(Entities.RelayerPerformance)->Entities.entityModToInternal,
+          )->(
+            Utils.magic: InMemoryTable.Entity.t<Internal.entity> => InMemoryTable.Entity.t<
+              Entities.RelayerPerformance.t,
+            >
+          ),
+          ~getKey=({id}) => id,
+        )
+      },
       relayerRegistry_EmergencySlash: {
         makeStoreOperatorEntity(
           ~inMemoryStore,
@@ -423,6 +530,20 @@ let rec makeWithInMemoryStore: InMemoryStore.t => t = (inMemoryStore: InMemorySt
           )->(
             Utils.magic: InMemoryTable.Entity.t<Internal.entity> => InMemoryTable.Entity.t<
               Entities.RelayerRegistry_WithdrawalRequested.t,
+            >
+          ),
+          ~getKey=({id}) => id,
+        )
+      },
+      subscriberStats: {
+        makeStoreOperatorEntity(
+          ~inMemoryStore,
+          ~makeMockDb=makeWithInMemoryStore,
+          ~getStore=db => db->InMemoryStore.getInMemTable(
+            ~entityConfig=module(Entities.SubscriberStats)->Entities.entityModToInternal,
+          )->(
+            Utils.magic: InMemoryTable.Entity.t<Internal.entity> => InMemoryTable.Entity.t<
+              Entities.SubscriberStats.t,
             >
           ),
           ~getKey=({id}) => id,
@@ -591,6 +712,20 @@ let rec makeWithInMemoryStore: InMemoryStore.t => t = (inMemoryStore: InMemorySt
           )->(
             Utils.magic: InMemoryTable.Entity.t<Internal.entity> => InMemoryTable.Entity.t<
               Entities.SubscribtionManager_TokenRemoved.t,
+            >
+          ),
+          ~getKey=({id}) => id,
+        )
+      },
+      subscription: {
+        makeStoreOperatorEntity(
+          ~inMemoryStore,
+          ~makeMockDb=makeWithInMemoryStore,
+          ~getStore=db => db->InMemoryStore.getInMemTable(
+            ~entityConfig=module(Entities.Subscription)->Entities.entityModToInternal,
+          )->(
+            Utils.magic: InMemoryTable.Entity.t<Internal.entity> => InMemoryTable.Entity.t<
+              Entities.Subscription.t,
             >
           ),
           ~getKey=({id}) => id,

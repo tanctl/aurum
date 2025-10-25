@@ -324,7 +324,8 @@ async function updateRelayerPerformance({
 }) {
   const relayerContext = (context as any).RelayerPerformance;
   if (!relayerContext) return;
-  const id = `${chainId}_${relayer}`;
+  const normalizedRelayer = normalizeAddress(relayer);
+  const id = `${chainId}_${normalizedRelayer}`;
   const existing = await relayerContext.get(id);
 
   const prevExecutions = bigIntFrom(existing?.executions);
@@ -352,7 +353,7 @@ async function updateRelayerPerformance({
 
   relayerContext.set({
     id,
-    relayer,
+    relayer: normalizedRelayer,
     chainId: BigInt(chainId).toString(),
     executions: nextExecutions.toString(),
     successfulExecutions: nextSuccess.toString(),
@@ -706,7 +707,7 @@ SubscriptionManager.PaymentExecuted.handler(async ({ event, context }: HandlerAr
 
   await updateRelayerPerformance({
     context,
-    relayer: relayerAddress,
+    relayer: normalizeAddress(event.params.relayer),
     chainId,
     timestamp: blockTimestamp,
     feeDelta: fee,

@@ -24,6 +24,202 @@ export type HandlerContext = {
    * After preload the handler will run for the second time in sequential order of events.
    */
   readonly isPreload: boolean;
+  readonly CrossChainAttestation: {
+    /**
+     * Load the entity CrossChainAttestation from the storage by ID.
+     * If the entity is not found, returns undefined.
+     */
+    readonly get: (id: string) => Promise<Entities.CrossChainAttestation_t | undefined>,
+    /**
+     * Load the entity CrossChainAttestation from the storage by ID.
+     * If the entity is not found, throws an error.
+     */
+    readonly getOrThrow: (id: string, message?: string) => Promise<Entities.CrossChainAttestation_t>,
+    readonly getWhere: Entities.CrossChainAttestation_indexedFieldOperations,
+    /**
+     * Returns the entity CrossChainAttestation from the storage by ID.
+     * If the entity is not found, creates it using provided parameters and returns it.
+     */
+    readonly getOrCreate: (entity: Entities.CrossChainAttestation_t) => Promise<Entities.CrossChainAttestation_t>,
+    /**
+     * Set the entity CrossChainAttestation in the storage.
+     */
+    readonly set: (entity: Entities.CrossChainAttestation_t) => void,
+    /**
+     * Delete the entity CrossChainAttestation from the storage.
+     *
+     * The 'deleteUnsafe' method is experimental and unsafe. You should manually handle all entity references after deletion to maintain database consistency.
+     */
+    readonly deleteUnsafe: (id: string) => void,
+  }
+  readonly IndexerMeta: {
+    /**
+     * Load the entity IndexerMeta from the storage by ID.
+     * If the entity is not found, returns undefined.
+     */
+    readonly get: (id: string) => Promise<Entities.IndexerMeta_t | undefined>,
+    /**
+     * Load the entity IndexerMeta from the storage by ID.
+     * If the entity is not found, throws an error.
+     */
+    readonly getOrThrow: (id: string, message?: string) => Promise<Entities.IndexerMeta_t>,
+    readonly getWhere: Entities.IndexerMeta_indexedFieldOperations,
+    /**
+     * Returns the entity IndexerMeta from the storage by ID.
+     * If the entity is not found, creates it using provided parameters and returns it.
+     */
+    readonly getOrCreate: (entity: Entities.IndexerMeta_t) => Promise<Entities.IndexerMeta_t>,
+    /**
+     * Set the entity IndexerMeta in the storage.
+     */
+    readonly set: (entity: Entities.IndexerMeta_t) => void,
+    /**
+     * Delete the entity IndexerMeta from the storage.
+     *
+     * The 'deleteUnsafe' method is experimental and unsafe. You should manually handle all entity references after deletion to maintain database consistency.
+     */
+    readonly deleteUnsafe: (id: string) => void,
+  }
+  readonly Intent: {
+    /**
+     * Load the entity Intent from the storage by ID.
+     * If the entity is not found, returns undefined.
+     */
+    readonly get: (id: string) => Promise<Entities.Intent_t | undefined>,
+    /**
+     * Load the entity Intent from the storage by ID.
+     * If the entity is not found, throws an error.
+     */
+    readonly getOrThrow: (id: string, message?: string) => Promise<Entities.Intent_t>,
+    readonly getWhere: Entities.Intent_indexedFieldOperations,
+    /**
+     * Returns the entity Intent from the storage by ID.
+     * If the entity is not found, creates it using provided parameters and returns it.
+     */
+    readonly getOrCreate: (entity: Entities.Intent_t) => Promise<Entities.Intent_t>,
+    /**
+     * Set the entity Intent in the storage.
+     */
+    readonly set: (entity: Entities.Intent_t) => void,
+    /**
+     * Delete the entity Intent from the storage.
+     *
+     * The 'deleteUnsafe' method is experimental and unsafe. You should manually handle all entity references after deletion to maintain database consistency.
+     */
+    readonly deleteUnsafe: (id: string) => void,
+  }
+  readonly MerchantPerformance: {
+    /**
+     * Load the entity MerchantPerformance from the storage by ID.
+     * If the entity is not found, returns undefined.
+     */
+    readonly get: (id: string) => Promise<Entities.MerchantPerformance_t | undefined>,
+    /**
+     * Load the entity MerchantPerformance from the storage by ID.
+     * If the entity is not found, throws an error.
+     */
+    readonly getOrThrow: (id: string, message?: string) => Promise<Entities.MerchantPerformance_t>,
+    readonly getWhere: Entities.MerchantPerformance_indexedFieldOperations,
+    /**
+     * Returns the entity MerchantPerformance from the storage by ID.
+     * If the entity is not found, creates it using provided parameters and returns it.
+     */
+    readonly getOrCreate: (entity: Entities.MerchantPerformance_t) => Promise<Entities.MerchantPerformance_t>,
+    /**
+     * Set the entity MerchantPerformance in the storage.
+     */
+    readonly set: (entity: Entities.MerchantPerformance_t) => void,
+    /**
+     * Delete the entity MerchantPerformance from the storage.
+     *
+     * The 'deleteUnsafe' method is experimental and unsafe. You should manually handle all entity references after deletion to maintain database consistency.
+     */
+    readonly deleteUnsafe: (id: string) => void,
+  }
+  readonly MerchantTokenStats: {
+    /**
+     * Load the entity MerchantTokenStats from the storage by ID.
+     * If the entity is not found, returns undefined.
+     */
+    readonly get: (id: string) => Promise<Entities.MerchantTokenStats_t | undefined>,
+    /**
+     * Load the entity MerchantTokenStats from the storage by ID.
+     * If the entity is not found, throws an error.
+     */
+    readonly getOrThrow: (id: string, message?: string) => Promise<Entities.MerchantTokenStats_t>,
+    readonly getWhere: Entities.MerchantTokenStats_indexedFieldOperations,
+    /**
+     * Returns the entity MerchantTokenStats from the storage by ID.
+     * If the entity is not found, creates it using provided parameters and returns it.
+     */
+    readonly getOrCreate: (entity: Entities.MerchantTokenStats_t) => Promise<Entities.MerchantTokenStats_t>,
+    /**
+     * Set the entity MerchantTokenStats in the storage.
+     */
+    readonly set: (entity: Entities.MerchantTokenStats_t) => void,
+    /**
+     * Delete the entity MerchantTokenStats from the storage.
+     *
+     * The 'deleteUnsafe' method is experimental and unsafe. You should manually handle all entity references after deletion to maintain database consistency.
+     */
+    readonly deleteUnsafe: (id: string) => void,
+  }
+  readonly Payment: {
+    /**
+     * Load the entity Payment from the storage by ID.
+     * If the entity is not found, returns undefined.
+     */
+    readonly get: (id: string) => Promise<Entities.Payment_t | undefined>,
+    /**
+     * Load the entity Payment from the storage by ID.
+     * If the entity is not found, throws an error.
+     */
+    readonly getOrThrow: (id: string, message?: string) => Promise<Entities.Payment_t>,
+    readonly getWhere: Entities.Payment_indexedFieldOperations,
+    /**
+     * Returns the entity Payment from the storage by ID.
+     * If the entity is not found, creates it using provided parameters and returns it.
+     */
+    readonly getOrCreate: (entity: Entities.Payment_t) => Promise<Entities.Payment_t>,
+    /**
+     * Set the entity Payment in the storage.
+     */
+    readonly set: (entity: Entities.Payment_t) => void,
+    /**
+     * Delete the entity Payment from the storage.
+     *
+     * The 'deleteUnsafe' method is experimental and unsafe. You should manually handle all entity references after deletion to maintain database consistency.
+     */
+    readonly deleteUnsafe: (id: string) => void,
+  }
+  readonly RelayerPerformance: {
+    /**
+     * Load the entity RelayerPerformance from the storage by ID.
+     * If the entity is not found, returns undefined.
+     */
+    readonly get: (id: string) => Promise<Entities.RelayerPerformance_t | undefined>,
+    /**
+     * Load the entity RelayerPerformance from the storage by ID.
+     * If the entity is not found, throws an error.
+     */
+    readonly getOrThrow: (id: string, message?: string) => Promise<Entities.RelayerPerformance_t>,
+    readonly getWhere: Entities.RelayerPerformance_indexedFieldOperations,
+    /**
+     * Returns the entity RelayerPerformance from the storage by ID.
+     * If the entity is not found, creates it using provided parameters and returns it.
+     */
+    readonly getOrCreate: (entity: Entities.RelayerPerformance_t) => Promise<Entities.RelayerPerformance_t>,
+    /**
+     * Set the entity RelayerPerformance in the storage.
+     */
+    readonly set: (entity: Entities.RelayerPerformance_t) => void,
+    /**
+     * Delete the entity RelayerPerformance from the storage.
+     *
+     * The 'deleteUnsafe' method is experimental and unsafe. You should manually handle all entity references after deletion to maintain database consistency.
+     */
+    readonly deleteUnsafe: (id: string) => void,
+  }
   readonly RelayerRegistry_EmergencySlash: {
     /**
      * Load the entity RelayerRegistry_EmergencySlash from the storage by ID.
@@ -271,6 +467,34 @@ export type HandlerContext = {
     readonly set: (entity: Entities.RelayerRegistry_WithdrawalRequested_t) => void,
     /**
      * Delete the entity RelayerRegistry_WithdrawalRequested from the storage.
+     *
+     * The 'deleteUnsafe' method is experimental and unsafe. You should manually handle all entity references after deletion to maintain database consistency.
+     */
+    readonly deleteUnsafe: (id: string) => void,
+  }
+  readonly SubscriberStats: {
+    /**
+     * Load the entity SubscriberStats from the storage by ID.
+     * If the entity is not found, returns undefined.
+     */
+    readonly get: (id: string) => Promise<Entities.SubscriberStats_t | undefined>,
+    /**
+     * Load the entity SubscriberStats from the storage by ID.
+     * If the entity is not found, throws an error.
+     */
+    readonly getOrThrow: (id: string, message?: string) => Promise<Entities.SubscriberStats_t>,
+    readonly getWhere: Entities.SubscriberStats_indexedFieldOperations,
+    /**
+     * Returns the entity SubscriberStats from the storage by ID.
+     * If the entity is not found, creates it using provided parameters and returns it.
+     */
+    readonly getOrCreate: (entity: Entities.SubscriberStats_t) => Promise<Entities.SubscriberStats_t>,
+    /**
+     * Set the entity SubscriberStats in the storage.
+     */
+    readonly set: (entity: Entities.SubscriberStats_t) => void,
+    /**
+     * Delete the entity SubscriberStats from the storage.
      *
      * The 'deleteUnsafe' method is experimental and unsafe. You should manually handle all entity references after deletion to maintain database consistency.
      */
@@ -607,6 +831,34 @@ export type HandlerContext = {
     readonly set: (entity: Entities.SubscribtionManager_TokenRemoved_t) => void,
     /**
      * Delete the entity SubscribtionManager_TokenRemoved from the storage.
+     *
+     * The 'deleteUnsafe' method is experimental and unsafe. You should manually handle all entity references after deletion to maintain database consistency.
+     */
+    readonly deleteUnsafe: (id: string) => void,
+  }
+  readonly Subscription: {
+    /**
+     * Load the entity Subscription from the storage by ID.
+     * If the entity is not found, returns undefined.
+     */
+    readonly get: (id: string) => Promise<Entities.Subscription_t | undefined>,
+    /**
+     * Load the entity Subscription from the storage by ID.
+     * If the entity is not found, throws an error.
+     */
+    readonly getOrThrow: (id: string, message?: string) => Promise<Entities.Subscription_t>,
+    readonly getWhere: Entities.Subscription_indexedFieldOperations,
+    /**
+     * Returns the entity Subscription from the storage by ID.
+     * If the entity is not found, creates it using provided parameters and returns it.
+     */
+    readonly getOrCreate: (entity: Entities.Subscription_t) => Promise<Entities.Subscription_t>,
+    /**
+     * Set the entity Subscription in the storage.
+     */
+    readonly set: (entity: Entities.Subscription_t) => void,
+    /**
+     * Delete the entity Subscription from the storage.
      *
      * The 'deleteUnsafe' method is experimental and unsafe. You should manually handle all entity references after deletion to maintain database consistency.
      */

@@ -1,8 +1,8 @@
 "use client";
 
-import type { ComponentType } from "react";
 import { formatDistanceToNow, fromUnixTime } from "date-fns";
 import { Activity, DollarSign, Gauge, LayoutDashboard, RefreshCcw, Users } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useAccount, useChainId } from "wagmi";
 
 import { useEnvioHealth, useMerchantStats } from "@/hooks/useEnvio";
@@ -221,7 +221,7 @@ export function MerchantDashboard() {
 }
 
 type OverviewKpiCardProps = {
-  icon: ComponentType<{ size?: number; className?: string }>;
+  icon: LucideIcon;
   label: string;
   value: string;
   description: string;

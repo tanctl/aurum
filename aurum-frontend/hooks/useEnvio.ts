@@ -262,6 +262,7 @@ export type MerchantStatsSummary = {
 export type MerchantTransactionRow = {
   id: string;
   subscriptionId: string;
+  paymentNumber: number;
   subscriber: string;
   merchant: string;
   amount: string;
@@ -273,6 +274,16 @@ export type MerchantTransactionRow = {
   blockNumber: number;
   timestamp: number;
   chainId: number;
+  executedAt?: number | null;
+  expectedAt?: number | null;
+  intentSignedAt?: number | null;
+  latencySeconds?: number | null;
+  usdValue?: string | null;
+  tokenDecimals?: number | null;
+  nexusAttestationId?: string | null;
+  nexusVerified: boolean;
+  relayerPerformanceId?: string | null;
+  merchantPerformanceId?: string | null;
 };
 
 export type MerchantTransactionsResult = {
@@ -436,6 +447,36 @@ function toNumberSafe(value: number | string | null | undefined): number {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+}
+
+function toMerchantTransactionRow(payment: PaymentEntity): MerchantTransactionRow {
+  const subscriptionId = payment.subscriptionId;
+  return {
+    id: payment.id,
+    subscriptionId,
+    paymentNumber: toNumberSafe(payment.paymentNumber),
+    subscriber: payment.subscriber ?? "",
+    merchant: payment.merchant ?? "",
+    amount: payment.amount,
+    fee: payment.fee,
+    token: payment.token,
+    tokenSymbol: payment.tokenSymbol ?? null,
+    relayer: payment.relayer ?? "",
+    txHash: payment.txHash,
+    blockNumber: toNumberSafe(payment.blockNumber),
+    timestamp: toNumberSafe(payment.timestamp),
+    chainId: toNumberSafe(payment.chainId),
+    executedAt: payment.executedAt != null ? toNumberSafe(payment.executedAt) : null,
+    expectedAt: payment.expectedAt != null ? toNumberSafe(payment.expectedAt) : null,
+    intentSignedAt: payment.intentSignedAt != null ? toNumberSafe(payment.intentSignedAt) : null,
+    latencySeconds: payment.latencySeconds ?? null,
+    usdValue: payment.usdValue ?? null,
+    tokenDecimals: payment.tokenDecimals ?? null,
+    nexusAttestationId: payment.nexusAttestationId ?? null,
+    nexusVerified: payment.nexusVerified ?? false,
+    relayerPerformanceId: payment.relayerPerformanceId ?? null,
+    merchantPerformanceId: payment.merchantPerformanceId ?? null,
+  };
 }
 
 function toHumanAmount(amount: string | null | undefined, tokenSymbol?: string | null): number {
@@ -975,15 +1016,7 @@ export function useMerchantTransactions(
         offset,
       }),
     select: (data): MerchantTransactionsResult => ({
-      transactions: data.Payment.map((payment) => ({
-        ...payment,
-        subscriber: payment.subscriber ?? "",
-        merchant: payment.merchant ?? "",
-        paymentNumber: Number(payment.paymentNumber),
-        blockNumber: toNumberSafe(payment.blockNumber),
-        timestamp: toNumberSafe(payment.timestamp),
-        chainId: toNumberSafe(payment.chainId),
-      })),
+      transactions: data.Payment.map(toMerchantTransactionRow),
       totalCount: data.Payment_aggregate.aggregate?.count ?? 0,
       totalRevenue: toBigIntSafe(data.Payment_aggregate.aggregate?.sum?.amount ?? null),
     }),
@@ -1001,15 +1034,7 @@ export function useMerchantTransactions(
         offset: 0,
       }
     );
-    return exportData.Payment.map((payment) => ({
-      ...payment,
-      subscriber: payment.subscriber ?? "",
-      merchant: payment.merchant ?? "",
-      paymentNumber: Number(payment.paymentNumber),
-      blockNumber: toNumberSafe(payment.blockNumber),
-      timestamp: toNumberSafe(payment.timestamp),
-      chainId: toNumberSafe(payment.chainId),
-    }));
+    return exportData.Payment.map(toMerchantTransactionRow);
   };
 
   return {

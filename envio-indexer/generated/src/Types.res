@@ -27,6 +27,13 @@ type handlerContext = {
   log: Envio.logger,
   effect: 'input 'output. (Envio.effect<'input, 'output>, 'input) => promise<'output>,
   isPreload: bool,
+  @as("CrossChainAttestation") crossChainAttestation: entityHandlerContext<Entities.CrossChainAttestation.t, Entities.CrossChainAttestation.indexedFieldOperations>,
+  @as("IndexerMeta") indexerMeta: entityHandlerContext<Entities.IndexerMeta.t, Entities.IndexerMeta.indexedFieldOperations>,
+  @as("Intent") intent: entityHandlerContext<Entities.Intent.t, Entities.Intent.indexedFieldOperations>,
+  @as("MerchantPerformance") merchantPerformance: entityHandlerContext<Entities.MerchantPerformance.t, Entities.MerchantPerformance.indexedFieldOperations>,
+  @as("MerchantTokenStats") merchantTokenStats: entityHandlerContext<Entities.MerchantTokenStats.t, Entities.MerchantTokenStats.indexedFieldOperations>,
+  @as("Payment") payment: entityHandlerContext<Entities.Payment.t, Entities.Payment.indexedFieldOperations>,
+  @as("RelayerPerformance") relayerPerformance: entityHandlerContext<Entities.RelayerPerformance.t, Entities.RelayerPerformance.indexedFieldOperations>,
   @as("RelayerRegistry_EmergencySlash") relayerRegistry_EmergencySlash: entityHandlerContext<Entities.RelayerRegistry_EmergencySlash.t, Entities.RelayerRegistry_EmergencySlash.indexedFieldOperations>,
   @as("RelayerRegistry_ExecutionRecorded") relayerRegistry_ExecutionRecorded: entityHandlerContext<Entities.RelayerRegistry_ExecutionRecorded.t, Entities.RelayerRegistry_ExecutionRecorded.indexedFieldOperations>,
   @as("RelayerRegistry_OwnershipTransferred") relayerRegistry_OwnershipTransferred: entityHandlerContext<Entities.RelayerRegistry_OwnershipTransferred.t, Entities.RelayerRegistry_OwnershipTransferred.indexedFieldOperations>,
@@ -36,6 +43,7 @@ type handlerContext = {
   @as("RelayerRegistry_RelayerUnregistered") relayerRegistry_RelayerUnregistered: entityHandlerContext<Entities.RelayerRegistry_RelayerUnregistered.t, Entities.RelayerRegistry_RelayerUnregistered.indexedFieldOperations>,
   @as("RelayerRegistry_SlashingParametersUpdated") relayerRegistry_SlashingParametersUpdated: entityHandlerContext<Entities.RelayerRegistry_SlashingParametersUpdated.t, Entities.RelayerRegistry_SlashingParametersUpdated.indexedFieldOperations>,
   @as("RelayerRegistry_WithdrawalRequested") relayerRegistry_WithdrawalRequested: entityHandlerContext<Entities.RelayerRegistry_WithdrawalRequested.t, Entities.RelayerRegistry_WithdrawalRequested.indexedFieldOperations>,
+  @as("SubscriberStats") subscriberStats: entityHandlerContext<Entities.SubscriberStats.t, Entities.SubscriberStats.indexedFieldOperations>,
   @as("SubscribtionManager_CrossChainPaymentInitiated") subscribtionManager_CrossChainPaymentInitiated: entityHandlerContext<Entities.SubscribtionManager_CrossChainPaymentInitiated.t, Entities.SubscribtionManager_CrossChainPaymentInitiated.indexedFieldOperations>,
   @as("SubscribtionManager_NexusAttestationSubmitted") subscribtionManager_NexusAttestationSubmitted: entityHandlerContext<Entities.SubscribtionManager_NexusAttestationSubmitted.t, Entities.SubscribtionManager_NexusAttestationSubmitted.indexedFieldOperations>,
   @as("SubscribtionManager_NexusAttestationVerified") subscribtionManager_NexusAttestationVerified: entityHandlerContext<Entities.SubscribtionManager_NexusAttestationVerified.t, Entities.SubscribtionManager_NexusAttestationVerified.indexedFieldOperations>,
@@ -48,9 +56,24 @@ type handlerContext = {
   @as("SubscribtionManager_SubscriptionResumed") subscribtionManager_SubscriptionResumed: entityHandlerContext<Entities.SubscribtionManager_SubscriptionResumed.t, Entities.SubscribtionManager_SubscriptionResumed.indexedFieldOperations>,
   @as("SubscribtionManager_TokenAdded") subscribtionManager_TokenAdded: entityHandlerContext<Entities.SubscribtionManager_TokenAdded.t, Entities.SubscribtionManager_TokenAdded.indexedFieldOperations>,
   @as("SubscribtionManager_TokenRemoved") subscribtionManager_TokenRemoved: entityHandlerContext<Entities.SubscribtionManager_TokenRemoved.t, Entities.SubscribtionManager_TokenRemoved.indexedFieldOperations>,
+  @as("Subscription") subscription: entityHandlerContext<Entities.Subscription.t, Entities.Subscription.indexedFieldOperations>,
 }
 
 //Re-exporting types for backwards compatability
+@genType.as("CrossChainAttestation")
+type crossChainAttestation = Entities.CrossChainAttestation.t
+@genType.as("IndexerMeta")
+type indexerMeta = Entities.IndexerMeta.t
+@genType.as("Intent")
+type intent = Entities.Intent.t
+@genType.as("MerchantPerformance")
+type merchantPerformance = Entities.MerchantPerformance.t
+@genType.as("MerchantTokenStats")
+type merchantTokenStats = Entities.MerchantTokenStats.t
+@genType.as("Payment")
+type payment = Entities.Payment.t
+@genType.as("RelayerPerformance")
+type relayerPerformance = Entities.RelayerPerformance.t
 @genType.as("RelayerRegistry_EmergencySlash")
 type relayerRegistry_EmergencySlash = Entities.RelayerRegistry_EmergencySlash.t
 @genType.as("RelayerRegistry_ExecutionRecorded")
@@ -69,6 +92,8 @@ type relayerRegistry_RelayerUnregistered = Entities.RelayerRegistry_RelayerUnreg
 type relayerRegistry_SlashingParametersUpdated = Entities.RelayerRegistry_SlashingParametersUpdated.t
 @genType.as("RelayerRegistry_WithdrawalRequested")
 type relayerRegistry_WithdrawalRequested = Entities.RelayerRegistry_WithdrawalRequested.t
+@genType.as("SubscriberStats")
+type subscriberStats = Entities.SubscriberStats.t
 @genType.as("SubscribtionManager_CrossChainPaymentInitiated")
 type subscribtionManager_CrossChainPaymentInitiated = Entities.SubscribtionManager_CrossChainPaymentInitiated.t
 @genType.as("SubscribtionManager_NexusAttestationSubmitted")
@@ -93,6 +118,8 @@ type subscribtionManager_SubscriptionResumed = Entities.SubscribtionManager_Subs
 type subscribtionManager_TokenAdded = Entities.SubscribtionManager_TokenAdded.t
 @genType.as("SubscribtionManager_TokenRemoved")
 type subscribtionManager_TokenRemoved = Entities.SubscribtionManager_TokenRemoved.t
+@genType.as("Subscription")
+type subscription = Entities.Subscription.t
 
 type eventIdentifier = {
   chainId: int,

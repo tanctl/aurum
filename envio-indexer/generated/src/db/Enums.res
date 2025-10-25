@@ -15,6 +15,13 @@ module ContractType = {
 module EntityType = {
   @genType
   type t = 
+    | @as("CrossChainAttestation") CrossChainAttestation
+    | @as("IndexerMeta") IndexerMeta
+    | @as("Intent") Intent
+    | @as("MerchantPerformance") MerchantPerformance
+    | @as("MerchantTokenStats") MerchantTokenStats
+    | @as("Payment") Payment
+    | @as("RelayerPerformance") RelayerPerformance
     | @as("RelayerRegistry_EmergencySlash") RelayerRegistry_EmergencySlash
     | @as("RelayerRegistry_ExecutionRecorded") RelayerRegistry_ExecutionRecorded
     | @as("RelayerRegistry_OwnershipTransferred") RelayerRegistry_OwnershipTransferred
@@ -24,6 +31,7 @@ module EntityType = {
     | @as("RelayerRegistry_RelayerUnregistered") RelayerRegistry_RelayerUnregistered
     | @as("RelayerRegistry_SlashingParametersUpdated") RelayerRegistry_SlashingParametersUpdated
     | @as("RelayerRegistry_WithdrawalRequested") RelayerRegistry_WithdrawalRequested
+    | @as("SubscriberStats") SubscriberStats
     | @as("SubscribtionManager_CrossChainPaymentInitiated") SubscribtionManager_CrossChainPaymentInitiated
     | @as("SubscribtionManager_NexusAttestationSubmitted") SubscribtionManager_NexusAttestationSubmitted
     | @as("SubscribtionManager_NexusAttestationVerified") SubscribtionManager_NexusAttestationVerified
@@ -36,10 +44,18 @@ module EntityType = {
     | @as("SubscribtionManager_SubscriptionResumed") SubscribtionManager_SubscriptionResumed
     | @as("SubscribtionManager_TokenAdded") SubscribtionManager_TokenAdded
     | @as("SubscribtionManager_TokenRemoved") SubscribtionManager_TokenRemoved
+    | @as("Subscription") Subscription
     | @as("dynamic_contract_registry") DynamicContractRegistry
 
   let name = "ENTITY_TYPE"
   let variants = [
+    CrossChainAttestation,
+    IndexerMeta,
+    Intent,
+    MerchantPerformance,
+    MerchantTokenStats,
+    Payment,
+    RelayerPerformance,
     RelayerRegistry_EmergencySlash,
     RelayerRegistry_ExecutionRecorded,
     RelayerRegistry_OwnershipTransferred,
@@ -49,6 +65,7 @@ module EntityType = {
     RelayerRegistry_RelayerUnregistered,
     RelayerRegistry_SlashingParametersUpdated,
     RelayerRegistry_WithdrawalRequested,
+    SubscriberStats,
     SubscribtionManager_CrossChainPaymentInitiated,
     SubscribtionManager_NexusAttestationSubmitted,
     SubscribtionManager_NexusAttestationVerified,
@@ -61,6 +78,7 @@ module EntityType = {
     SubscribtionManager_SubscriptionResumed,
     SubscribtionManager_TokenAdded,
     SubscribtionManager_TokenRemoved,
+    Subscription,
     DynamicContractRegistry,
   ]
   let config = Internal.makeEnumConfig(~name, ~variants)

@@ -40,6 +40,1311 @@ type whereOperations<'entity, 'fieldType> = {
   gt: 'fieldType => promise<array<'entity>>
 }
 
+module CrossChainAttestation = {
+  let name = (CrossChainAttestation :> string)
+  @genType
+  type t = {
+    amount: option<bigint>,
+    attestationId: string,
+    chainId: bigint,
+    id: id,
+    paymentNumber: bigint,
+    subscriptionId: string,
+    timestamp: bigint,
+    token: option<string>,
+    verified: bool,
+  }
+
+  let schema = S.object((s): t => {
+    amount: s.field("amount", S.null(BigInt.schema)),
+    attestationId: s.field("attestationId", S.string),
+    chainId: s.field("chainId", BigInt.schema),
+    id: s.field("id", S.string),
+    paymentNumber: s.field("paymentNumber", BigInt.schema),
+    subscriptionId: s.field("subscriptionId", S.string),
+    timestamp: s.field("timestamp", BigInt.schema),
+    token: s.field("token", S.null(S.string)),
+    verified: s.field("verified", S.bool),
+  })
+
+  let rowsSchema = S.array(schema)
+
+  @genType
+  type indexedFieldOperations = {
+    
+  }
+
+  let table = mkTable(
+    (name :> string),
+    ~fields=[
+      mkField(
+      "amount", 
+      Numeric,
+      ~fieldSchema=S.null(BigInt.schema),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "attestationId", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "chainId", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "id", 
+      Text,
+      ~fieldSchema=S.string,
+      ~isPrimaryKey,
+      
+      
+      
+      
+      ),
+      mkField(
+      "paymentNumber", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "subscriptionId", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "timestamp", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "token", 
+      Text,
+      ~fieldSchema=S.null(S.string),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "verified", 
+      Boolean,
+      ~fieldSchema=S.bool,
+      
+      
+      
+      
+      
+      ),
+    ],
+  )
+
+  let entityHistory = table->EntityHistory.fromTable(~schema)
+
+  external castToInternal: t => Internal.entity = "%identity"
+}
+
+module IndexerMeta = {
+  let name = (IndexerMeta :> string)
+  @genType
+  type t = {
+    chainId: bigint,
+    envioVersion: option<string>,
+    id: id,
+    indexingLatencyMs: option<bigint>,
+    lastSyncTimestamp: bigint,
+    latestIndexedBlock: bigint,
+    latestIndexedTimestamp: bigint,
+    performanceScore: option<float>,
+  }
+
+  let schema = S.object((s): t => {
+    chainId: s.field("chainId", BigInt.schema),
+    envioVersion: s.field("envioVersion", S.null(S.string)),
+    id: s.field("id", S.string),
+    indexingLatencyMs: s.field("indexingLatencyMs", S.null(BigInt.schema)),
+    lastSyncTimestamp: s.field("lastSyncTimestamp", BigInt.schema),
+    latestIndexedBlock: s.field("latestIndexedBlock", BigInt.schema),
+    latestIndexedTimestamp: s.field("latestIndexedTimestamp", BigInt.schema),
+    performanceScore: s.field("performanceScore", S.null(S.float)),
+  })
+
+  let rowsSchema = S.array(schema)
+
+  @genType
+  type indexedFieldOperations = {
+    
+  }
+
+  let table = mkTable(
+    (name :> string),
+    ~fields=[
+      mkField(
+      "chainId", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "envioVersion", 
+      Text,
+      ~fieldSchema=S.null(S.string),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "id", 
+      Text,
+      ~fieldSchema=S.string,
+      ~isPrimaryKey,
+      
+      
+      
+      
+      ),
+      mkField(
+      "indexingLatencyMs", 
+      Numeric,
+      ~fieldSchema=S.null(BigInt.schema),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "lastSyncTimestamp", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "latestIndexedBlock", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "latestIndexedTimestamp", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "performanceScore", 
+      DoublePrecision,
+      ~fieldSchema=S.null(S.float),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+    ],
+  )
+
+  let entityHistory = table->EntityHistory.fromTable(~schema)
+
+  external castToInternal: t => Internal.entity = "%identity"
+}
+
+module Intent = {
+  let name = (Intent :> string)
+  @genType
+  type t = {
+    amount: bigint,
+    createdAt: bigint,
+    createdAtBlock: bigint,
+    expiry: bigint,
+    id: id,
+    interval: bigint,
+    maxPayments: bigint,
+    maxTotalAmount: bigint,
+    merchant: string,
+    performanceScore: option<float>,
+    signature: option<string>,
+    status: string,
+    subscriber: string,
+    subscriptionId: string,
+    token: string,
+  }
+
+  let schema = S.object((s): t => {
+    amount: s.field("amount", BigInt.schema),
+    createdAt: s.field("createdAt", BigInt.schema),
+    createdAtBlock: s.field("createdAtBlock", BigInt.schema),
+    expiry: s.field("expiry", BigInt.schema),
+    id: s.field("id", S.string),
+    interval: s.field("interval", BigInt.schema),
+    maxPayments: s.field("maxPayments", BigInt.schema),
+    maxTotalAmount: s.field("maxTotalAmount", BigInt.schema),
+    merchant: s.field("merchant", S.string),
+    performanceScore: s.field("performanceScore", S.null(S.float)),
+    signature: s.field("signature", S.null(S.string)),
+    status: s.field("status", S.string),
+    subscriber: s.field("subscriber", S.string),
+    subscriptionId: s.field("subscriptionId", S.string),
+    token: s.field("token", S.string),
+  })
+
+  let rowsSchema = S.array(schema)
+
+  @genType
+  type indexedFieldOperations = {
+    
+  }
+
+  let table = mkTable(
+    (name :> string),
+    ~fields=[
+      mkField(
+      "amount", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "createdAt", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "createdAtBlock", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "expiry", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "id", 
+      Text,
+      ~fieldSchema=S.string,
+      ~isPrimaryKey,
+      
+      
+      
+      
+      ),
+      mkField(
+      "interval", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "maxPayments", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "maxTotalAmount", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "merchant", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "performanceScore", 
+      DoublePrecision,
+      ~fieldSchema=S.null(S.float),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "signature", 
+      Text,
+      ~fieldSchema=S.null(S.string),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "status", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "subscriber", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "subscriptionId", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "token", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+    ],
+  )
+
+  let entityHistory = table->EntityHistory.fromTable(~schema)
+
+  external castToInternal: t => Internal.entity = "%identity"
+}
+
+module MerchantPerformance = {
+  let name = (MerchantPerformance :> string)
+  @genType
+  type t = {
+    activeSubscriptions: bigint,
+    averageLatencySeconds: option<float>,
+    averagePaymentValue: option<bigint>,
+    failedPayments: bigint,
+    id: id,
+    lastPaymentAt: option<bigint>,
+    latencySamples: bigint,
+    latencyTotalSeconds: bigint,
+    merchant: string,
+    performanceScore: option<float>,
+    successfulPayments: bigint,
+    totalPayments: bigint,
+    totalRevenue: bigint,
+    totalSubscriptions: bigint,
+    updatedAt: bigint,
+  }
+
+  let schema = S.object((s): t => {
+    activeSubscriptions: s.field("activeSubscriptions", BigInt.schema),
+    averageLatencySeconds: s.field("averageLatencySeconds", S.null(S.float)),
+    averagePaymentValue: s.field("averagePaymentValue", S.null(BigInt.schema)),
+    failedPayments: s.field("failedPayments", BigInt.schema),
+    id: s.field("id", S.string),
+    lastPaymentAt: s.field("lastPaymentAt", S.null(BigInt.schema)),
+    latencySamples: s.field("latencySamples", BigInt.schema),
+    latencyTotalSeconds: s.field("latencyTotalSeconds", BigInt.schema),
+    merchant: s.field("merchant", S.string),
+    performanceScore: s.field("performanceScore", S.null(S.float)),
+    successfulPayments: s.field("successfulPayments", BigInt.schema),
+    totalPayments: s.field("totalPayments", BigInt.schema),
+    totalRevenue: s.field("totalRevenue", BigInt.schema),
+    totalSubscriptions: s.field("totalSubscriptions", BigInt.schema),
+    updatedAt: s.field("updatedAt", BigInt.schema),
+  })
+
+  let rowsSchema = S.array(schema)
+
+  @genType
+  type indexedFieldOperations = {
+    
+  }
+
+  let table = mkTable(
+    (name :> string),
+    ~fields=[
+      mkField(
+      "activeSubscriptions", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "averageLatencySeconds", 
+      DoublePrecision,
+      ~fieldSchema=S.null(S.float),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "averagePaymentValue", 
+      Numeric,
+      ~fieldSchema=S.null(BigInt.schema),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "failedPayments", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "id", 
+      Text,
+      ~fieldSchema=S.string,
+      ~isPrimaryKey,
+      
+      
+      
+      
+      ),
+      mkField(
+      "lastPaymentAt", 
+      Numeric,
+      ~fieldSchema=S.null(BigInt.schema),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "latencySamples", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "latencyTotalSeconds", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "merchant", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "performanceScore", 
+      DoublePrecision,
+      ~fieldSchema=S.null(S.float),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "successfulPayments", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "totalPayments", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "totalRevenue", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "totalSubscriptions", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "updatedAt", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+    ],
+  )
+
+  let entityHistory = table->EntityHistory.fromTable(~schema)
+
+  external castToInternal: t => Internal.entity = "%identity"
+}
+
+module MerchantTokenStats = {
+  let name = (MerchantTokenStats :> string)
+  @genType
+  type t = {
+    activeSubscriptions: bigint,
+    averageTransactionValue: bigint,
+    chainId: bigint,
+    id: id,
+    merchant: string,
+    token: string,
+    tokenSymbol: string,
+    totalPayments: bigint,
+    totalRevenue: bigint,
+    totalSubscriptions: bigint,
+  }
+
+  let schema = S.object((s): t => {
+    activeSubscriptions: s.field("activeSubscriptions", BigInt.schema),
+    averageTransactionValue: s.field("averageTransactionValue", BigInt.schema),
+    chainId: s.field("chainId", BigInt.schema),
+    id: s.field("id", S.string),
+    merchant: s.field("merchant", S.string),
+    token: s.field("token", S.string),
+    tokenSymbol: s.field("tokenSymbol", S.string),
+    totalPayments: s.field("totalPayments", BigInt.schema),
+    totalRevenue: s.field("totalRevenue", BigInt.schema),
+    totalSubscriptions: s.field("totalSubscriptions", BigInt.schema),
+  })
+
+  let rowsSchema = S.array(schema)
+
+  @genType
+  type indexedFieldOperations = {
+    
+  }
+
+  let table = mkTable(
+    (name :> string),
+    ~fields=[
+      mkField(
+      "activeSubscriptions", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "averageTransactionValue", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "chainId", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "id", 
+      Text,
+      ~fieldSchema=S.string,
+      ~isPrimaryKey,
+      
+      
+      
+      
+      ),
+      mkField(
+      "merchant", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "token", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "tokenSymbol", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "totalPayments", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "totalRevenue", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "totalSubscriptions", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+    ],
+  )
+
+  let entityHistory = table->EntityHistory.fromTable(~schema)
+
+  external castToInternal: t => Internal.entity = "%identity"
+}
+
+module Payment = {
+  let name = (Payment :> string)
+  @genType
+  type t = {
+    amount: bigint,
+    blockNumber: bigint,
+    chainId: bigint,
+    executedAt: bigint,
+    expectedAt: option<bigint>,
+    fee: bigint,
+    id: id,
+    intentSignedAt: option<bigint>,
+    latencySeconds: option<int>,
+    merchant: string,
+    merchantPerformanceId: option<string>,
+    nexusAttestationId: option<string>,
+    nexusVerified: bool,
+    paymentNumber: bigint,
+    relayer: string,
+    relayerPerformanceId: option<string>,
+    subscriber: string,
+    subscriptionId: string,
+    timestamp: bigint,
+    token: string,
+    tokenDecimals: option<int>,
+    tokenSymbol: string,
+    txHash: string,
+    usdValue: option<bigint>,
+  }
+
+  let schema = S.object((s): t => {
+    amount: s.field("amount", BigInt.schema),
+    blockNumber: s.field("blockNumber", BigInt.schema),
+    chainId: s.field("chainId", BigInt.schema),
+    executedAt: s.field("executedAt", BigInt.schema),
+    expectedAt: s.field("expectedAt", S.null(BigInt.schema)),
+    fee: s.field("fee", BigInt.schema),
+    id: s.field("id", S.string),
+    intentSignedAt: s.field("intentSignedAt", S.null(BigInt.schema)),
+    latencySeconds: s.field("latencySeconds", S.null(S.int)),
+    merchant: s.field("merchant", S.string),
+    merchantPerformanceId: s.field("merchantPerformanceId", S.null(S.string)),
+    nexusAttestationId: s.field("nexusAttestationId", S.null(S.string)),
+    nexusVerified: s.field("nexusVerified", S.bool),
+    paymentNumber: s.field("paymentNumber", BigInt.schema),
+    relayer: s.field("relayer", S.string),
+    relayerPerformanceId: s.field("relayerPerformanceId", S.null(S.string)),
+    subscriber: s.field("subscriber", S.string),
+    subscriptionId: s.field("subscriptionId", S.string),
+    timestamp: s.field("timestamp", BigInt.schema),
+    token: s.field("token", S.string),
+    tokenDecimals: s.field("tokenDecimals", S.null(S.int)),
+    tokenSymbol: s.field("tokenSymbol", S.string),
+    txHash: s.field("txHash", S.string),
+    usdValue: s.field("usdValue", S.null(BigInt.schema)),
+  })
+
+  let rowsSchema = S.array(schema)
+
+  @genType
+  type indexedFieldOperations = {
+    
+  }
+
+  let table = mkTable(
+    (name :> string),
+    ~fields=[
+      mkField(
+      "amount", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "blockNumber", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "chainId", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "executedAt", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "expectedAt", 
+      Numeric,
+      ~fieldSchema=S.null(BigInt.schema),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "fee", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "id", 
+      Text,
+      ~fieldSchema=S.string,
+      ~isPrimaryKey,
+      
+      
+      
+      
+      ),
+      mkField(
+      "intentSignedAt", 
+      Numeric,
+      ~fieldSchema=S.null(BigInt.schema),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "latencySeconds", 
+      Integer,
+      ~fieldSchema=S.null(S.int),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "merchant", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "merchantPerformanceId", 
+      Text,
+      ~fieldSchema=S.null(S.string),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "nexusAttestationId", 
+      Text,
+      ~fieldSchema=S.null(S.string),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "nexusVerified", 
+      Boolean,
+      ~fieldSchema=S.bool,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "paymentNumber", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "relayer", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "relayerPerformanceId", 
+      Text,
+      ~fieldSchema=S.null(S.string),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "subscriber", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "subscriptionId", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "timestamp", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "token", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "tokenDecimals", 
+      Integer,
+      ~fieldSchema=S.null(S.int),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "tokenSymbol", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "txHash", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "usdValue", 
+      Numeric,
+      ~fieldSchema=S.null(BigInt.schema),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+    ],
+  )
+
+  let entityHistory = table->EntityHistory.fromTable(~schema)
+
+  external castToInternal: t => Internal.entity = "%identity"
+}
+
+module RelayerPerformance = {
+  let name = (RelayerPerformance :> string)
+  @genType
+  type t = {
+    averageLatencySeconds: option<float>,
+    chainId: bigint,
+    executions: bigint,
+    failedExecutions: bigint,
+    id: id,
+    latencySamples: bigint,
+    latencyTotalSeconds: bigint,
+    performanceScore: option<float>,
+    relayer: string,
+    successfulExecutions: bigint,
+    totalFees: bigint,
+    updatedAt: bigint,
+  }
+
+  let schema = S.object((s): t => {
+    averageLatencySeconds: s.field("averageLatencySeconds", S.null(S.float)),
+    chainId: s.field("chainId", BigInt.schema),
+    executions: s.field("executions", BigInt.schema),
+    failedExecutions: s.field("failedExecutions", BigInt.schema),
+    id: s.field("id", S.string),
+    latencySamples: s.field("latencySamples", BigInt.schema),
+    latencyTotalSeconds: s.field("latencyTotalSeconds", BigInt.schema),
+    performanceScore: s.field("performanceScore", S.null(S.float)),
+    relayer: s.field("relayer", S.string),
+    successfulExecutions: s.field("successfulExecutions", BigInt.schema),
+    totalFees: s.field("totalFees", BigInt.schema),
+    updatedAt: s.field("updatedAt", BigInt.schema),
+  })
+
+  let rowsSchema = S.array(schema)
+
+  @genType
+  type indexedFieldOperations = {
+    
+  }
+
+  let table = mkTable(
+    (name :> string),
+    ~fields=[
+      mkField(
+      "averageLatencySeconds", 
+      DoublePrecision,
+      ~fieldSchema=S.null(S.float),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "chainId", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "executions", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "failedExecutions", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "id", 
+      Text,
+      ~fieldSchema=S.string,
+      ~isPrimaryKey,
+      
+      
+      
+      
+      ),
+      mkField(
+      "latencySamples", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "latencyTotalSeconds", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "performanceScore", 
+      DoublePrecision,
+      ~fieldSchema=S.null(S.float),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "relayer", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "successfulExecutions", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "totalFees", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "updatedAt", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+    ],
+  )
+
+  let entityHistory = table->EntityHistory.fromTable(~schema)
+
+  external castToInternal: t => Internal.entity = "%identity"
+}
+
 module RelayerRegistry_EmergencySlash = {
   let name = (RelayerRegistry_EmergencySlash :> string)
   @genType
@@ -639,6 +1944,141 @@ module RelayerRegistry_WithdrawalRequested = {
       ),
       mkField(
       "requestTime", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+    ],
+  )
+
+  let entityHistory = table->EntityHistory.fromTable(~schema)
+
+  external castToInternal: t => Internal.entity = "%identity"
+}
+
+module SubscriberStats = {
+  let name = (SubscriberStats :> string)
+  @genType
+  type t = {
+    activeSubscriptions: bigint,
+    id: id,
+    lastPaymentAt: option<bigint>,
+    merchant: string,
+    payments: bigint,
+    performanceScore: option<float>,
+    subscriber: string,
+    totalPaid: bigint,
+    updatedAt: bigint,
+  }
+
+  let schema = S.object((s): t => {
+    activeSubscriptions: s.field("activeSubscriptions", BigInt.schema),
+    id: s.field("id", S.string),
+    lastPaymentAt: s.field("lastPaymentAt", S.null(BigInt.schema)),
+    merchant: s.field("merchant", S.string),
+    payments: s.field("payments", BigInt.schema),
+    performanceScore: s.field("performanceScore", S.null(S.float)),
+    subscriber: s.field("subscriber", S.string),
+    totalPaid: s.field("totalPaid", BigInt.schema),
+    updatedAt: s.field("updatedAt", BigInt.schema),
+  })
+
+  let rowsSchema = S.array(schema)
+
+  @genType
+  type indexedFieldOperations = {
+    
+  }
+
+  let table = mkTable(
+    (name :> string),
+    ~fields=[
+      mkField(
+      "activeSubscriptions", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "id", 
+      Text,
+      ~fieldSchema=S.string,
+      ~isPrimaryKey,
+      
+      
+      
+      
+      ),
+      mkField(
+      "lastPaymentAt", 
+      Numeric,
+      ~fieldSchema=S.null(BigInt.schema),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "merchant", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "payments", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "performanceScore", 
+      DoublePrecision,
+      ~fieldSchema=S.null(S.float),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "subscriber", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "totalPaid", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "updatedAt", 
       Numeric,
       ~fieldSchema=BigInt.schema,
       
@@ -1639,7 +3079,281 @@ module SubscribtionManager_TokenRemoved = {
   external castToInternal: t => Internal.entity = "%identity"
 }
 
+module Subscription = {
+  let name = (Subscription :> string)
+  @genType
+  type t = {
+    amount: bigint,
+    chainId: bigint,
+    createdAt: bigint,
+    createdAtBlock: bigint,
+    expiry: bigint,
+    id: id,
+    intentSignedAt: option<bigint>,
+    interval: bigint,
+    maxPayments: bigint,
+    maxTotalAmount: bigint,
+    merchant: string,
+    paymentsExecuted: bigint,
+    performanceScore: option<float>,
+    startTime: bigint,
+    status: string,
+    subscriber: string,
+    subscriptionId: string,
+    token: string,
+    tokenSymbol: string,
+    totalAmountPaid: bigint,
+  }
+
+  let schema = S.object((s): t => {
+    amount: s.field("amount", BigInt.schema),
+    chainId: s.field("chainId", BigInt.schema),
+    createdAt: s.field("createdAt", BigInt.schema),
+    createdAtBlock: s.field("createdAtBlock", BigInt.schema),
+    expiry: s.field("expiry", BigInt.schema),
+    id: s.field("id", S.string),
+    intentSignedAt: s.field("intentSignedAt", S.null(BigInt.schema)),
+    interval: s.field("interval", BigInt.schema),
+    maxPayments: s.field("maxPayments", BigInt.schema),
+    maxTotalAmount: s.field("maxTotalAmount", BigInt.schema),
+    merchant: s.field("merchant", S.string),
+    paymentsExecuted: s.field("paymentsExecuted", BigInt.schema),
+    performanceScore: s.field("performanceScore", S.null(S.float)),
+    startTime: s.field("startTime", BigInt.schema),
+    status: s.field("status", S.string),
+    subscriber: s.field("subscriber", S.string),
+    subscriptionId: s.field("subscriptionId", S.string),
+    token: s.field("token", S.string),
+    tokenSymbol: s.field("tokenSymbol", S.string),
+    totalAmountPaid: s.field("totalAmountPaid", BigInt.schema),
+  })
+
+  let rowsSchema = S.array(schema)
+
+  @genType
+  type indexedFieldOperations = {
+    
+  }
+
+  let table = mkTable(
+    (name :> string),
+    ~fields=[
+      mkField(
+      "amount", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "chainId", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "createdAt", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "createdAtBlock", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "expiry", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "id", 
+      Text,
+      ~fieldSchema=S.string,
+      ~isPrimaryKey,
+      
+      
+      
+      
+      ),
+      mkField(
+      "intentSignedAt", 
+      Numeric,
+      ~fieldSchema=S.null(BigInt.schema),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "interval", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "maxPayments", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "maxTotalAmount", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "merchant", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "paymentsExecuted", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "performanceScore", 
+      DoublePrecision,
+      ~fieldSchema=S.null(S.float),
+      
+      ~isNullable,
+      
+      
+      
+      ),
+      mkField(
+      "startTime", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "status", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "subscriber", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "subscriptionId", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "token", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "tokenSymbol", 
+      Text,
+      ~fieldSchema=S.string,
+      
+      
+      
+      
+      
+      ),
+      mkField(
+      "totalAmountPaid", 
+      Numeric,
+      ~fieldSchema=BigInt.schema,
+      
+      
+      
+      
+      
+      ),
+    ],
+  )
+
+  let entityHistory = table->EntityHistory.fromTable(~schema)
+
+  external castToInternal: t => Internal.entity = "%identity"
+}
+
 let userEntities = [
+  module(CrossChainAttestation),
+  module(IndexerMeta),
+  module(Intent),
+  module(MerchantPerformance),
+  module(MerchantTokenStats),
+  module(Payment),
+  module(RelayerPerformance),
   module(RelayerRegistry_EmergencySlash),
   module(RelayerRegistry_ExecutionRecorded),
   module(RelayerRegistry_OwnershipTransferred),
@@ -1649,6 +3363,7 @@ let userEntities = [
   module(RelayerRegistry_RelayerUnregistered),
   module(RelayerRegistry_SlashingParametersUpdated),
   module(RelayerRegistry_WithdrawalRequested),
+  module(SubscriberStats),
   module(SubscribtionManager_CrossChainPaymentInitiated),
   module(SubscribtionManager_NexusAttestationSubmitted),
   module(SubscribtionManager_NexusAttestationVerified),
@@ -1661,6 +3376,7 @@ let userEntities = [
   module(SubscribtionManager_SubscriptionResumed),
   module(SubscribtionManager_TokenAdded),
   module(SubscribtionManager_TokenRemoved),
+  module(Subscription),
 ]->entityModsToInternal
 
 let allEntities =
