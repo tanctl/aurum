@@ -191,7 +191,7 @@ export function SubscriptionActions({
   }, [address, contractAddress, walletClient, publicClient]);
 
   async function fetchNonce(): Promise<bigint> {
-    if (!publicClient || !contractAddress || !address) return 0n;
+    if (!publicClient || !contractAddress || !address) return BigInt(0);
     return publicClient.readContract({
       abi: SUBSCRIPTION_MANAGER_ABI,
       address: contractAddress,
@@ -263,9 +263,9 @@ export function SubscriptionActions({
       });
       onComplete?.();
       setModal(null);
-      queryClient.invalidateQueries(subscriptionCacheKey);
+      queryClient.invalidateQueries({ queryKey: subscriptionCacheKey });
       if (subscriberCacheKey) {
-        queryClient.invalidateQueries(subscriberCacheKey);
+        queryClient.invalidateQueries({ queryKey: subscriberCacheKey });
       }
     } catch (err) {
       revertOptimistic(snapshot);
@@ -324,9 +324,9 @@ export function SubscriptionActions({
       });
       onComplete?.();
       setModal(null);
-      queryClient.invalidateQueries(subscriptionCacheKey);
+      queryClient.invalidateQueries({ queryKey: subscriptionCacheKey });
       if (subscriberCacheKey) {
-        queryClient.invalidateQueries(subscriberCacheKey);
+        queryClient.invalidateQueries({ queryKey: subscriberCacheKey });
       }
     } catch (err) {
       revertOptimistic(snapshot);
@@ -352,16 +352,15 @@ export function SubscriptionActions({
   async function estimateCancelGas() {
     if (!publicClient || !contractAddress || !address) return null;
     try {
-      const gas = await publicClient.estimateGas({
-        account: address,
-        to: contractAddress,
+      const { request } = await publicClient.simulateContract({
         abi: SUBSCRIPTION_MANAGER_ABI,
+        address: contractAddress,
+        account: address,
         functionName: "cancelSubscription",
         args: [subscriptionId as Hex],
       });
-      const gasPrice = await publicClient.getGasPrice();
-      const total = gas * gasPrice;
-      return formatTokenAmount(total.toString(), 18);
+      const gas = request.gas ?? BigInt(0);
+      return formatTokenAmount(gas.toString(), 18);
     } catch (error) {
       console.warn("Failed to estimate gas", error);
       return null;
@@ -401,9 +400,9 @@ export function SubscriptionActions({
       });
       onComplete?.();
       setModal(null);
-      queryClient.invalidateQueries(subscriptionCacheKey);
+      queryClient.invalidateQueries({ queryKey: subscriptionCacheKey });
       if (subscriberCacheKey) {
-        queryClient.invalidateQueries(subscriberCacheKey);
+        queryClient.invalidateQueries({ queryKey: subscriberCacheKey });
       }
     } catch (err) {
       revertOptimistic(snapshot);

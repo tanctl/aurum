@@ -55,6 +55,9 @@ export default function SubscriptionDetailPage() {
   }, [payments]);
 
   const decimals = tokenDecimalsForSymbol(subscription?.tokenSymbol);
+  const intervalSeconds = subscription ? Number(subscription.interval ?? 0) : 0;
+  const paymentsExecuted = subscription ? Number(subscription.paymentsExecuted ?? 0) : 0;
+  const maxPayments = subscription ? Number(subscription.maxPayments ?? 0) : 0;
   const chainId = subscription ? Number(subscription.chainId ?? 0) : undefined;
 
   const timelineEvents: TimelineEvent[] = useMemo(() => {
@@ -75,9 +78,6 @@ export default function SubscriptionDetailPage() {
       });
     }
 
-    const maxPayments = Number(subscription.maxPayments ?? 0);
-    const paymentsExecuted = Number(subscription.paymentsExecuted ?? 0);
-    const interval = Number(subscription.interval ?? 0);
     const nextPaymentBase = subscription.nextPaymentDue
       ? Number(subscription.nextPaymentDue)
       : Number(subscription.startTime ?? 0);
@@ -91,14 +91,14 @@ export default function SubscriptionDetailPage() {
       for (let index = 1; index <= limit; index++) {
         events.push({
           label: `Scheduled payment ${paymentsExecuted + index}`,
-          timestamp: nextPaymentBase + interval * index,
+          timestamp: nextPaymentBase + intervalSeconds * index,
           state: "future",
         });
       }
     }
 
     return events;
-  }, [subscription, payments]);
+  }, [subscription, payments, maxPayments, paymentsExecuted, intervalSeconds]);
 
   const explorerUrl =
     subscription?.subscriptionId && ENVIO_EXPLORER_URL
@@ -201,7 +201,7 @@ export default function SubscriptionDetailPage() {
                   <dt className="text-xs uppercase tracking-widest text-text-primary">
                     Interval
                   </dt>
-                  <dd>{formatInterval(subscription.interval)}</dd>
+                  <dd>{formatInterval(intervalSeconds)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs uppercase tracking-widest text-text-primary">
@@ -217,8 +217,8 @@ export default function SubscriptionDetailPage() {
                     Executed / Max
                   </dt>
                   <dd>
-                    {subscription.paymentsExecuted}
-                    {subscription.maxPayments > 0 ? ` / ${subscription.maxPayments}` : " • unlimited"}
+                    {paymentsExecuted}
+                    {maxPayments > 0 ? ` / ${maxPayments}` : " • unlimited"}
                   </dd>
                 </div>
                 <div>

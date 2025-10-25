@@ -221,7 +221,7 @@ export function MerchantDashboard() {
 }
 
 type OverviewKpiCardProps = {
-  icon: ComponentType<{ size?: number }>;
+  icon: ComponentType<{ size?: number; className?: string }>;
   label: string;
   value: string;
   description: string;

@@ -145,16 +145,16 @@ export default function SubscriptionsPage() {
                     amount={subscription.amount}
                     tokenSymbol={subscription.tokenSymbol ?? "TOKEN"}
                     status={subscription.status}
-                    intervalSeconds={subscription.interval}
-                    executedPayments={subscription.paymentsExecuted}
-                    maxPayments={subscription.maxPayments}
-                    nextPaymentTime={subscription.nextPaymentDue}
-                    totalAmountPaid={subscription.totalAmountPaid}
+                    intervalSeconds={Number(subscription.interval ?? 0)}
+                    executedPayments={Number(subscription.paymentsExecuted ?? 0)}
+                    maxPayments={Number(subscription.maxPayments ?? 0)}
+                    nextPaymentTime={Number(subscription.nextPaymentDue ?? 0)}
+                    totalAmountPaid={subscription.totalAmountPaid ?? "0"}
                     explorerUrl={subscription.explorerUrl}
                     href={`/subscriptions/${subscription.subscriptionId}`}
-                    chainLabel={getChainName(subscription.chainId)}
+                    chainLabel={getChainName(Number(subscription.chainId ?? 0))}
                     accent="highlight"
-                    createdAt={subscription.createdAt}
+                    createdAt={Number(subscription.createdAt ?? 0)}
                   />
                 ))}
               </div>
@@ -182,15 +182,15 @@ export default function SubscriptionsPage() {
                     amount={subscription.amount}
                     tokenSymbol={subscription.tokenSymbol ?? "TOKEN"}
                     status={subscription.status}
-                    intervalSeconds={subscription.interval}
-                    executedPayments={subscription.paymentsExecuted}
-                    maxPayments={subscription.maxPayments}
-                    nextPaymentTime={subscription.nextPaymentDue}
-                    totalAmountPaid={subscription.totalAmountPaid}
+                    intervalSeconds={Number(subscription.interval ?? 0)}
+                    executedPayments={Number(subscription.paymentsExecuted ?? 0)}
+                    maxPayments={Number(subscription.maxPayments ?? 0)}
+                    nextPaymentTime={Number(subscription.nextPaymentDue ?? 0)}
+                    totalAmountPaid={subscription.totalAmountPaid ?? "0"}
                     explorerUrl={subscription.explorerUrl}
                     href={`/subscriptions/${subscription.subscriptionId}`}
-                    chainLabel={getChainName(subscription.chainId)}
-                    createdAt={subscription.createdAt}
+                    chainLabel={getChainName(Number(subscription.chainId ?? 0))}
+                    createdAt={Number(subscription.createdAt ?? 0)}
                   />
                 ))}
               </div>
@@ -218,15 +218,15 @@ export default function SubscriptionsPage() {
                     amount={subscription.amount}
                     tokenSymbol={subscription.tokenSymbol ?? "TOKEN"}
                     status={subscription.status}
-                    intervalSeconds={subscription.interval}
-                    executedPayments={subscription.paymentsExecuted}
-                    maxPayments={subscription.maxPayments}
-                    nextPaymentTime={subscription.nextPaymentDue}
-                    totalAmountPaid={subscription.totalAmountPaid}
+                    intervalSeconds={Number(subscription.interval ?? 0)}
+                    executedPayments={Number(subscription.paymentsExecuted ?? 0)}
+                    maxPayments={Number(subscription.maxPayments ?? 0)}
+                    nextPaymentTime={Number(subscription.nextPaymentDue ?? 0)}
+                    totalAmountPaid={subscription.totalAmountPaid ?? "0"}
                     explorerUrl={subscription.explorerUrl}
                     href={`/subscriptions/${subscription.subscriptionId}`}
-                    chainLabel={getChainName(subscription.chainId)}
-                    createdAt={subscription.createdAt}
+                    chainLabel={getChainName(Number(subscription.chainId ?? 0))}
+                    createdAt={Number(subscription.createdAt ?? 0)}
                   />
                 ))}
               </div>

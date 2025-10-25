@@ -102,6 +102,8 @@ type PaymentEntity = {
   fee: string;
   token: string;
   tokenSymbol: string | null;
+  subscriber: string;
+  merchant: string;
   relayer: string;
   txHash: string;
   blockNumber: number | string;
@@ -135,6 +137,8 @@ type MerchantDashboardStatsData = {
     amount: string;
     interval: number | string;
     tokenSymbol: string | null;
+  subscriber: string;
+  merchant: string;
   }>;
 };
 
@@ -206,6 +210,7 @@ type MerchantPaymentsSeriesData = {
     id: string;
     subscriptionId: string;
     subscriber: string;
+    merchant: string;
     amount: string;
     timestamp: number | string;
     chainId: number | string;
@@ -290,6 +295,7 @@ export type MerchantSeriesPoint = {
   id: string;
   subscriptionId: string;
   subscriber: string;
+  merchant: string;
   timestamp: number;
   amount: bigint;
   chainId: number;
@@ -413,11 +419,11 @@ export type SubscriptionHealthSummary = {
 };
 
 function toBigIntSafe(value: string | null | undefined): bigint {
-  if (!value) return 0n;
+  if (!value) return BigInt(0);
   try {
     return BigInt(value);
   } catch {
-    return 0n;
+    return BigInt(0);
   }
 }
 
@@ -971,6 +977,8 @@ export function useMerchantTransactions(
     select: (data): MerchantTransactionsResult => ({
       transactions: data.Payment.map((payment) => ({
         ...payment,
+        subscriber: payment.subscriber ?? "",
+        merchant: payment.merchant ?? "",
         paymentNumber: Number(payment.paymentNumber),
         blockNumber: toNumberSafe(payment.blockNumber),
         timestamp: toNumberSafe(payment.timestamp),
@@ -995,6 +1003,8 @@ export function useMerchantTransactions(
     );
     return exportData.Payment.map((payment) => ({
       ...payment,
+      subscriber: payment.subscriber ?? "",
+      merchant: payment.merchant ?? "",
       paymentNumber: Number(payment.paymentNumber),
       blockNumber: toNumberSafe(payment.blockNumber),
       timestamp: toNumberSafe(payment.timestamp),
@@ -1035,6 +1045,7 @@ export function useMerchantPaymentsSeries(
         id: payment.id,
         subscriptionId: payment.subscriptionId,
         subscriber: payment.subscriber,
+        merchant: payment.merchant,
         timestamp: toNumberSafe(payment.timestamp),
         amount: toBigIntSafe(payment.amount),
         chainId: toNumberSafe(payment.chainId),
@@ -1081,7 +1092,7 @@ export function useMerchantSubscribers(merchantAddress: string | undefined) {
         const entry =
           summary.get(key) ??
           {
-            totalPaid: 0n,
+            totalPaid: BigInt(0),
             payments: 0,
             lastPaymentAt: 0,
             subscriptionIds: new Set<string>(),
@@ -1209,7 +1220,7 @@ export function useMerchantPerformance(merchantAddress: string | undefined) {
       const averageLatency =
         row.averageLatencySeconds != null
           ? row.averageLatencySeconds
-          : latencySamples > 0n
+          : latencySamples > BigInt(0)
             ? Number(latencyTotal) / Math.max(1, Number(latencySamples))
             : null;
 
@@ -1247,7 +1258,7 @@ export function useRelayerPerformanceTop(limit = 5) {
         const averageLatency =
           row.averageLatencySeconds != null
             ? row.averageLatencySeconds
-            : latencySamples > 0n
+            : latencySamples > BigInt(0)
               ? Number(latencyTotal) / Math.max(1, Number(latencySamples))
               : null;
 
