@@ -1,6 +1,7 @@
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
 import { http } from "wagmi";
 import type { Chain } from "wagmi/chains";
+import type { Config } from "wagmi";
 
 const sepoliaRpc = process.env.NEXT_PUBLIC_SEPOLIA_RPC || "https://rpc.sepolia.org";
 const baseSepoliaRpc =
@@ -54,13 +55,20 @@ export const chains = [sepolia, baseSepolia] as const;
 
 export type SupportedChainId = (typeof chains)[number]["id"];
 
-export const config = getDefaultConfig({
-  appName: "Aurum Protocol",
-  projectId: walletConnectProjectId,
-  chains,
-  ssr: true,
-  transports: {
-    [sepolia.id]: http(sepoliaRpc),
-    [baseSepolia.id]: http(baseSepoliaRpc),
-  },
-});
+let wagmiConfig: Config | undefined;
+
+export function getWagmiConfig() {
+  if (!wagmiConfig) {
+    wagmiConfig = getDefaultConfig({
+      appName: "Aurum Protocol",
+      projectId: walletConnectProjectId,
+      chains,
+      ssr: true,
+      transports: {
+        [sepolia.id]: http(sepoliaRpc),
+        [baseSepolia.id]: http(baseSepoliaRpc),
+      },
+    });
+  }
+  return wagmiConfig;
+}

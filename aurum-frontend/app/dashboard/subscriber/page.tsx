@@ -18,9 +18,10 @@ export default function SubscriberDashboardPage() {
       .filter((item) => item.status === "ACTIVE")
       .map((item) => ({
         id: item.subscriptionId,
+        subscriptionId: item.subscriptionId,
         status: item.status,
         merchant: item.subscriptionId,
-        tokenSymbol: "ETH",
+        tokenSymbol: "UNKNOWN",
         amount: "0",
         nextPaymentTime: item.timestamp,
       }));
@@ -52,8 +53,18 @@ export default function SubscriberDashboardPage() {
         ) : null}
         {activeSubscriptions.map((subscription) => (
           <div key={subscription.id} className="space-y-4">
-            <SubscriptionCard {...subscription} merchant={subscription.merchant} amount={subscription.amount} />
-            <SubscriptionActions status={subscription.status} />
+            <SubscriptionCard
+              {...subscription}
+              subscriptionId={subscription.subscriptionId}
+              merchant={subscription.merchant}
+              amount={subscription.amount}
+            />
+            <SubscriptionActions
+              subscriptionId={subscription.subscriptionId}
+              status={subscription.status}
+              tokenSymbol={subscription.tokenSymbol}
+              amount={subscription.amount}
+            />
           </div>
         ))}
       </section>

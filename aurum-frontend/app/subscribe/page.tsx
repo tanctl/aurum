@@ -9,6 +9,8 @@ import { getPyusdAddress, getSubscriptionManagerAddress, useErc20Read } from "@/
 import { type SupportedChainId } from "@/lib/wagmi";
 import { decodeTemplate, type SubscriptionTemplate } from "@/lib/subscriptionTemplate";
 import { formatUnits, parseUnits } from "viem";
+import { shortenAddress } from "@/lib/utils";
+import { useToast } from "@/hooks/useToast";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const SEPOLIA_CHAIN_ID = 11155111 as SupportedChainId;
@@ -148,6 +150,7 @@ function SubscribeFromTemplate() {
   const { address } = useAccount();
   const connectedChainId = useChainId() as SupportedChainId | undefined;
   const { signTypedDataAsync } = useSignTypedData();
+  const toast = useToast();
 
   const [template, setTemplate] = useState<SubscriptionTemplate | null>(null);
   const [decodeError, setDecodeError] = useState<string | null>(null);
@@ -155,6 +158,18 @@ function SubscribeFromTemplate() {
   const [selectedToken, setSelectedToken] = useState<string>(ZERO_ADDRESS);
   const [submission, setSubmission] = useState<SubmissionState>({ status: "idle" });
   const [copySuccess, setCopySuccess] = useState(false);
+
+  useEffect(() => {
+    if (submission.status === "success") {
+      toast.success("Subscription created successfully!", {
+        description: `ID: ${shortenAddress(submission.subscriptionId)}`,
+      });
+    } else if (submission.status === "error") {
+      toast.error("Failed to create subscription", {
+        description: submission.message,
+      });
+    }
+  }, [submission, toast]);
 
   useEffect(() => {
     if (!encodedTemplate) {

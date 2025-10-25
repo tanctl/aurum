@@ -1,4 +1,5 @@
 import "@/polyfills/global-buffer";
+import "@/polyfills/global-indexeddb";
 
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
@@ -6,6 +7,9 @@ import "@rainbow-me/rainbowkit/styles.css";
 
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import { Web3Provider } from "@/components/providers/Web3Provider";
+import { ToastProvider } from "@/components/providers/ToastProvider";
+import { NetworkBanner } from "@/components/web3/NetworkBanner";
 
 import "./globals.css";
 
@@ -33,14 +37,11 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Aurum",
     description:
-      "Recurring crypto payments secured by Avail DA, Envio HyperIndex, and Nexus attestations.",
+      "Recurring crypto payments secured by Avail DA and Envio HyperIndex attestation trails.",
   },
   icons: {
-    icon: [
-      { url: "/favicon.ico", type: "image/x-icon" },
-      { url: "/favicon.png", type: "image/png", sizes: "512x512" },
-    ],
-    shortcut: "/favicon.ico",
+    icon: [{ url: "/favicon.png", type: "image/png", sizes: "512x512" }],
+    shortcut: "/favicon.png",
     apple: [{ url: "/icon.png", type: "image/png", sizes: "310x310" }],
   },
 };
@@ -55,11 +56,16 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} bg-foundation-black text-text-primary antialiased`}
       >
-        <div className="flex min-h-screen flex-col">
-          <Header />
-          <main className="flex-1">{children}</main>
-          <Footer />
-        </div>
+        <Web3Provider>
+          <ToastProvider>
+            <div className="flex min-h-screen flex-col">
+              <NetworkBanner />
+              <Header />
+              <main className="flex-1">{children}</main>
+              <Footer />
+            </div>
+          </ToastProvider>
+        </Web3Provider>
       </body>
     </html>
   );

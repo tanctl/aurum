@@ -13,7 +13,7 @@ const reasons = [
   {
     title: "Cross-Chain Execution",
     description:
-      "Built to operate seamlessly across Sepolia and Base with Avail Nexus handling cross-chain data integrity.",
+      "Built to operate seamlessly across Sepolia and Base with Avail data availability anchoring every subscription intent.",
   },
   {
     title: "Transparent & Verifiable",
@@ -61,7 +61,7 @@ const faqItems = [
   {
     question: "How are payments verified and tracked across chains?",
     answer:
-      "Every subscription and payment event is indexed in real-time using Envio HyperIndex and verified via Avail Nexus cross-chain attestations. This enables merchants and subscribers to prove payment history on any supported chain with public, verifiable data.",
+      "Every subscription and payment event is indexed in real-time using Envio HyperIndex and anchored to Avail DA. This enables merchants and subscribers to prove payment history on any supported chain with public, verifiable data.",
   },
   {
     question: "How is Aurum different from other subscription/payment solutions?",

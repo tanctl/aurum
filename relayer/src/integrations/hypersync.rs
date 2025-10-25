@@ -217,32 +217,45 @@ impl HyperSyncClient {
 
         let stream_config = StreamConfig::default();
 
-        let response = client
-            .clone()
-            .collect_events(query, stream_config)
-            .await
-            .map_err(|e| {
-                let message = e.to_string();
-                if message.contains("404 Not Found") {
-                    let chain_label = Self::chain_name(chain_id)
-                        .unwrap_or("unknown chain")
-                        .to_string();
-                    let endpoint = self
-                        .endpoint_for_chain(chain_id)
-                        .unwrap_or("unconfigured endpoint");
-                    RelayerError::NotFound(format!(
-                        "HyperSync endpoint {} returned 404 for {}. Check HYPERSYNC_URL_{}.",
-                        endpoint,
-                        chain_label,
-                        chain_label.to_uppercase().replace(' ', "_")
-                    ))
-                } else {
-                    RelayerError::RpcConnectionFailed(format!(
-                        "hypersync query failed: {}",
-                        message
-                    ))
+        let response = client.clone().collect_events(query, stream_config).await.map_err(|e| {
+            let mut chain_iter = e.chain();
+            let mut flattened = Vec::new();
+            let mut not_found = false;
+            while let Some(cause) = chain_iter.next() {
+                let cause_str = cause.to_string();
+                if cause_str.contains("404 Not Found") {
+                    not_found = true;
                 }
-            })?;
+                flattened.push(cause_str);
+            }
+
+            let detail = if flattened.is_empty() {
+                e.to_string()
+            } else {
+                flattened.join(" -> ")
+            };
+
+            if not_found {
+                let chain_label = Self::chain_name(chain_id)
+                    .unwrap_or("unknown chain")
+                    .to_string();
+                let endpoint = self
+                    .endpoint_for_chain(chain_id)
+                    .unwrap_or("unconfigured endpoint");
+                RelayerError::NotFound(format!(
+                    "HyperSync endpoint {} returned 404 for {} (details: {}). Check HYPERSYNC_URL_{}.",
+                    endpoint,
+                    chain_label,
+                    detail,
+                    chain_label.to_uppercase().replace(' ', "_")
+                ))
+            } else {
+                RelayerError::RpcConnectionFailed(format!(
+                    "hypersync query failed: {}",
+                    detail
+                ))
+            }
+        })?;
 
         let mut events = Vec::new();
         for batch in response.data {
@@ -268,6 +281,7 @@ impl HyperSyncClient {
         if window < RPC_FALLBACK_MIN_WINDOW {
             window = total_span.max(1);
         }
+        let mut force_min_window = false;
 
         let mut start = from_block;
         let mut logs = Vec::new();
@@ -290,11 +304,33 @@ impl HyperSyncClient {
                     Ok(mut fetched_logs) => {
                         logs.append(&mut fetched_logs);
                         let next_window = min(chunk.saturating_mul(2), RPC_FALLBACK_INITIAL_WINDOW);
-                        window = max(next_window, RPC_FALLBACK_MIN_WINDOW);
+                        window = if force_min_window {
+                            RPC_FALLBACK_MIN_WINDOW
+                        } else {
+                            max(next_window, RPC_FALLBACK_MIN_WINDOW)
+                        };
                         start = end.saturating_add(1);
                         break;
                     }
                     Err(RelayerError::RpcConnectionFailed(msg)) => {
+                        let lower_msg = msg.to_lowercase();
+                        if lower_msg.contains("10 block range")
+                            || lower_msg.contains("block range should work")
+                            || lower_msg.contains("free tier plan")
+                        {
+                            if chunk != RPC_FALLBACK_MIN_WINDOW {
+                                warn!(
+                                    "eth_getLogs provider for {} enforces a 10-block window; retrying range {}-{} with chunk size {}",
+                                    chain, start, end, RPC_FALLBACK_MIN_WINDOW
+                                );
+                            }
+                            force_min_window = true;
+                            chunk = RPC_FALLBACK_MIN_WINDOW
+                                .min(end.saturating_sub(start).saturating_add(1))
+                                .max(1);
+                            continue;
+                        }
+
                         if chunk > RPC_FALLBACK_MIN_WINDOW {
                             let reduced = max(chunk / 2, RPC_FALLBACK_MIN_WINDOW);
                             warn!(
@@ -719,83 +755,6 @@ impl HyperSyncClient {
         .await
     }
 
-    pub async fn sync_large_range_payments(
-        &self,
-        chain_id: u64,
-        contract_address: &str,
-        from_block: u64,
-        to_block: u64,
-    ) -> Result<Vec<RawPaymentEvent>> {
-        let mut current_start = from_block;
-        let mut aggregated = Vec::new();
-
-        while current_start <= to_block {
-            let current_end = (current_start.saturating_add(CHUNK_SIZE)).min(to_block);
-            let chunk_start = Instant::now();
-            let chunk = self
-                .get_historical_payments(chain_id, contract_address, current_start, current_end)
-                .await?;
-            let elapsed = chunk_start.elapsed();
-            info!(
-                "retrieved {} payment events from HyperSync (chain={}, from={}, to={}, duration_ms={})",
-                chunk.len(),
-                chain_id,
-                current_start,
-                current_end,
-                elapsed.as_millis()
-            );
-            aggregated.extend(chunk);
-            if current_end == to_block {
-                break;
-            }
-            current_start = current_end.saturating_add(1);
-            sleep(Duration::from_millis(100)).await;
-        }
-
-        Ok(aggregated)
-    }
-
-    pub async fn sync_large_range_subscriptions(
-        &self,
-        chain_id: u64,
-        contract_address: &str,
-        from_block: u64,
-        to_block: u64,
-    ) -> Result<Vec<RawSubscriptionEvent>> {
-        let mut current_start = from_block;
-        let mut aggregated = Vec::new();
-
-        while current_start <= to_block {
-            let current_end = (current_start.saturating_add(CHUNK_SIZE)).min(to_block);
-            let chunk_start = Instant::now();
-            let chunk = self
-                .get_historical_subscriptions(
-                    chain_id,
-                    contract_address,
-                    current_start,
-                    current_end,
-                )
-                .await?;
-            let elapsed = chunk_start.elapsed();
-            info!(
-                "retrieved {} subscription events from HyperSync (chain={}, from={}, to={}, duration_ms={})",
-                chunk.len(),
-                chain_id,
-                current_start,
-                current_end,
-                elapsed.as_millis()
-            );
-            aggregated.extend(chunk);
-            if current_end == to_block {
-                break;
-            }
-            current_start = current_end.saturating_add(1);
-            sleep(Duration::from_millis(100)).await;
-        }
-
-        Ok(aggregated)
-    }
-
     pub async fn fetch_payments_via_rpc(
         &self,
         blockchain_client: &BlockchainClient,
@@ -894,87 +853,125 @@ impl HyperSyncClient {
                 chain_name, sync_start_block, current_block
             );
 
-            let subscription_events = match self
-                .sync_large_range_subscriptions(
-                    chain_numeric_id,
-                    &contract_address,
-                    sync_start_block,
-                    current_block,
-                )
-                .await
-            {
-                Ok(events) => events,
-                Err(err) => {
-                    warn!(
-                        "HyperSync subscription sync failed for {}: {}, falling back to RPC",
-                        chain_name, err
-                    );
-                    Self::fetch_subscriptions_via_rpc_static(
-                        blockchain_client.as_ref(),
-                        chain_name,
+            let mut current_start = sync_start_block;
+
+            while current_start <= current_block {
+                let chunk_end = current_start.saturating_add(CHUNK_SIZE).min(current_block);
+
+                let chunk_timer = Instant::now();
+                let subscription_events = match self
+                    .get_historical_subscriptions(
                         chain_numeric_id,
                         &contract_address,
-                        sync_start_block,
-                        current_block,
+                        current_start,
+                        chunk_end,
                     )
-                    .await?
-                }
-            };
+                    .await
+                {
+                    Ok(events) => events,
+                    Err(err) => {
+                        warn!(
+                            "HyperSync subscription chunk {}-{} failed for {}: {}, falling back to RPC",
+                            current_start, chunk_end, chain_name, err
+                        );
+                        Self::fetch_subscriptions_via_rpc_static(
+                            blockchain_client.as_ref(),
+                            chain_name,
+                            chain_numeric_id,
+                            &contract_address,
+                            current_start,
+                            chunk_end,
+                        )
+                        .await?
+                    }
+                };
 
-            let payment_events = match self
-                .sync_large_range_payments(
+                info!(
+                    "retrieved {} subscription events from HyperSync (chain={}, from={}, to={}, duration_ms={})",
+                    subscription_events.len(),
                     chain_numeric_id,
-                    &contract_address,
-                    sync_start_block,
-                    current_block,
-                )
-                .await
-            {
-                Ok(events) => events,
-                Err(err) => {
-                    warn!(
-                        "HyperSync payment sync failed for {}: {}, falling back to RPC",
-                        chain_name, err
-                    );
-                    Self::fetch_payments_via_rpc_static(
-                        blockchain_client.as_ref(),
-                        chain_name,
+                    current_start,
+                    chunk_end,
+                    chunk_timer.elapsed().as_millis()
+                );
+
+                for event in subscription_events {
+                    if let Err(err) = self
+                        .persist_subscription_event(
+                            &event,
+                            chain_name,
+                            &queries,
+                            &blockchain_client,
+                        )
+                        .await
+                    {
+                        warn!(
+                            "failed to persist subscription {} on {}: {}",
+                            event.subscription_id, chain_name, err
+                        );
+                    }
+                }
+
+                let payment_timer = Instant::now();
+                let payment_events = match self
+                    .get_historical_payments(
                         chain_numeric_id,
                         &contract_address,
-                        sync_start_block,
-                        current_block,
+                        current_start,
+                        chunk_end,
                     )
-                    .await?
-                }
-            };
-
-            for event in subscription_events {
-                if let Err(err) = self
-                    .persist_subscription_event(&event, chain_name, &queries, &blockchain_client)
                     .await
                 {
-                    warn!(
-                        "failed to persist subscription {} on {}: {}",
-                        event.subscription_id, chain_name, err
-                    );
-                }
-            }
+                    Ok(events) => events,
+                    Err(err) => {
+                        warn!(
+                            "HyperSync payment chunk {}-{} failed for {}: {}, falling back to RPC",
+                            current_start, chunk_end, chain_name, err
+                        );
+                        Self::fetch_payments_via_rpc_static(
+                            blockchain_client.as_ref(),
+                            chain_name,
+                            chain_numeric_id,
+                            &contract_address,
+                            current_start,
+                            chunk_end,
+                        )
+                        .await?
+                    }
+                };
 
-            for event in payment_events {
-                if let Err(err) = self
-                    .persist_payment_event(&event, chain_name, &queries, &blockchain_client)
-                    .await
-                {
-                    warn!(
-                        "failed to persist payment {} on {}: {}",
-                        event.transaction_hash, chain_name, err
-                    );
-                }
-            }
+                info!(
+                    "retrieved {} payment events from HyperSync (chain={}, from={}, to={}, duration_ms={})",
+                    payment_events.len(),
+                    chain_numeric_id,
+                    current_start,
+                    chunk_end,
+                    payment_timer.elapsed().as_millis()
+                );
 
-            queries
-                .update_sync_metadata(chain_id as i64, current_block as i64)
-                .await?;
+                for event in payment_events {
+                    if let Err(err) = self
+                        .persist_payment_event(&event, chain_name, &queries, &blockchain_client)
+                        .await
+                    {
+                        warn!(
+                            "failed to persist payment {} on {}: {}",
+                            event.transaction_hash, chain_name, err
+                        );
+                    }
+                }
+
+                queries
+                    .update_sync_metadata(chain_id as i64, chunk_end as i64)
+                    .await?;
+
+                if chunk_end == current_block {
+                    break;
+                }
+
+                current_start = chunk_end.saturating_add(1);
+                sleep(Duration::from_millis(100)).await;
+            }
 
             info!(
                 "HyperSync historical sync complete for {} (synced up to block {})",

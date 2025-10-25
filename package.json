@@ -30,8 +30,6 @@
     "viem": "^2.38.0"
   },
   "dependencies": {
-    "@avail-project/nexus-core": "^0.0.1",
-    "@avail-project/nexus-widgets": "^0.0.5",
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
     "@openzeppelin/contracts-upgradeable": "^5.4.0",
     "@openzeppelin/hardhat-upgrades": "^3.9.1",

@@ -1,11 +1,11 @@
-use std::convert::TryFrom;
+use std::{convert::TryFrom, env};
 
 use avail_rust_client::{
     block_api::BlockWithExt, extensions::KeypairExt, prelude::*, Client as SdkClient,
     Error as SdkError, UserError as SdkUserError,
 };
 use chrono::Utc;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     api::types::SubscriptionIntent,
@@ -108,36 +108,42 @@ impl AvailClient {
             let app_id = config
                 .avail_application_id
                 .expect("avail_enabled implies application id present");
-            let secret_uri = config
-                .avail_secret_uri
-                .as_ref()
-                .expect("avail_enabled implies secret uri present")
-                .clone();
+            let signing_key = env::var("AVAIL_SIGNING_KEY")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
 
-            let client = SdkClient::new(endpoint.trim())
-                .await
-                .map_err(map_sdk_error)?;
-            let signer = avail_rust_client::subxt_signer::sr25519::Keypair::from_str(&secret_uri)
-                .map_err(map_user_error)?;
+            if let Some(secret_uri) = signing_key {
+                let client = SdkClient::new(endpoint.trim())
+                    .await
+                    .map_err(map_sdk_error)?;
+                let signer =
+                    avail_rust_client::subxt_signer::sr25519::Keypair::from_str(&secret_uri)
+                        .map_err(map_user_error)?;
 
-            info!(
-                "initialised Avail client in remote mode targeting {} (app_id={})",
-                endpoint, app_id
-            );
+                info!(
+                    "initialised Avail client in remote mode targeting {} (app_id={})",
+                    endpoint, app_id
+                );
 
-            Ok(Self {
-                inner: AvailClientModeInner::Remote(Box::new(RemoteClient {
-                    client,
-                    signer,
-                    app_id,
-                })),
-            })
-        } else {
-            info!("initialised Avail client in stub mode");
-            Ok(Self {
-                inner: AvailClientModeInner::Stub(StubClient),
-            })
+                return Ok(Self {
+                    inner: AvailClientModeInner::Remote(Box::new(RemoteClient {
+                        client,
+                        signer,
+                        app_id,
+                    })),
+                });
+            } else {
+                warn!(
+                    "AVAIL_RPC_URL configured but AVAIL_SIGNING_KEY is missing; falling back to stub mode"
+                );
+            }
         }
+
+        info!("initialised Avail client in stub mode");
+        Ok(Self {
+            inner: AvailClientModeInner::Stub(StubClient),
+        })
     }
 
     pub fn mode(&self) -> AvailClientMode {

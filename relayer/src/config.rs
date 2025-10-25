@@ -28,8 +28,6 @@ pub struct Config {
     pub envio_explorer_url: Option<String>,
     pub avail_rpc_url: Option<String>,
     pub avail_application_id: Option<u32>,
-    pub avail_auth_token: Option<String>,
-    pub avail_secret_uri: Option<String>,
     pub hypersync_url_sepolia: Option<String>,
     pub hypersync_url_base: Option<String>,
 }
@@ -105,8 +103,6 @@ impl Config {
                 })
             })
             .transpose()?;
-        let avail_auth_token = env::var("AVAIL_AUTH_TOKEN").ok();
-        let avail_secret_uri = env::var("AVAIL_SECRET_URI").ok();
         let hypersync_url_sepolia = env::var("HYPERSYNC_URL_SEPOLIA").ok();
         let hypersync_url_base = env::var("HYPERSYNC_URL_BASE").ok();
         let config = Config {
@@ -130,8 +126,6 @@ impl Config {
             envio_explorer_url,
             avail_rpc_url,
             avail_application_id,
-            avail_auth_token,
-            avail_secret_uri,
             hypersync_url_sepolia,
             hypersync_url_base,
         };
@@ -225,17 +219,6 @@ impl Config {
         if avail_rpc_specified && self.avail_application_id.is_none() {
             return Err(anyhow::anyhow!(
                 "AVAIL_APPLICATION_ID is required when AVAIL_RPC_URL is set"
-            ));
-        }
-        if avail_rpc_specified
-            && self
-                .avail_secret_uri
-                .as_ref()
-                .map(|v| v.trim().is_empty())
-                .unwrap_or(true)
-        {
-            return Err(anyhow::anyhow!(
-                "AVAIL_SECRET_URI is required when AVAIL_RPC_URL is set"
             ));
         }
 
@@ -403,16 +386,17 @@ impl Config {
     }
 
     pub fn avail_enabled(&self) -> bool {
+        let signing_key_present = env::var("AVAIL_SIGNING_KEY")
+            .ok()
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false);
+
         self.avail_rpc_url
             .as_ref()
             .map(|url| url.to_lowercase() != "stub" && !url.trim().is_empty())
             .unwrap_or(false)
             && self.avail_application_id.is_some()
-            && self
-                .avail_secret_uri
-                .as_ref()
-                .map(|uri| !uri.trim().is_empty())
-                .unwrap_or(false)
+            && signing_key_present
     }
 
     pub fn envio_enabled(&self) -> bool {

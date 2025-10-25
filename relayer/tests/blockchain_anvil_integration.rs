@@ -248,8 +248,6 @@ async fn test_blockchain_client_with_anvil() {
     );
     std::env::set_var("AVAIL_RPC_URL", "stub");
     std::env::remove_var("AVAIL_APPLICATION_ID");
-    std::env::remove_var("AVAIL_SECRET_URI");
-    std::env::remove_var("AVAIL_AUTH_TOKEN");
     std::env::remove_var("ENVIO_GRAPHQL_ENDPOINT");
     std::env::remove_var("ENVIO_EXPLORER_URL");
 

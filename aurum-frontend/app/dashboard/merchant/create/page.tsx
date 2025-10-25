@@ -73,18 +73,21 @@ function defaultTokenForChain(chain: SupportedChainId): string {
 function tokenOptionsForChain(
   chain: SupportedChainId,
 ): Array<{ label: string; value: string }> {
-  if (chain === 84532) {
-    return [
-      { label: "Base Sepolia – Native ETH", value: ZERO_ADDRESS },
-    ];
+  const chainLabel = chain === 84532 ? "Base Sepolia" : "Sepolia";
+  const pyusdAddress = getPyusdAddress(chain);
+  const options: Array<{ label: string; value: string }> = [];
+
+  if (pyusdAddress && pyusdAddress !== ZERO_ADDRESS) {
+    options.push({
+      label: `${chainLabel} – PYUSD`,
+      value: pyusdAddress,
+    });
   }
-  const configured = getPyusdAddress(chain);
-  const options = [
-    { label: "Sepolia – Native ETH", value: ZERO_ADDRESS },
-    ...(configured !== ZERO_ADDRESS
-      ? [{ label: "Sepolia – PYUSD test token", value: configured }]
-      : []),
-  ];
+
+  options.push({
+    label: `${chainLabel} – Native ETH`,
+    value: ZERO_ADDRESS,
+  });
 
   return options.filter(
     (option, index, self) =>
@@ -267,7 +270,8 @@ export default function MerchantCreatePage() {
   return (
     <div className="space-y-8">
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold text-text-primary">Design a subscription intent</h1>
+        <p className="text-xs uppercase tracking-[0.4em] text-secondary/70">Merchant Dashboard</p>
+        <h1 className="text-2xl font-semibold text-text-primary">Create</h1>
         <p className="text-sm text-text-muted">
           Configure billing parameters once. Share the generated link with your subscriber so they can review, sign, and submit the intent from their wallet.
         </p>

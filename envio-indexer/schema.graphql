@@ -177,6 +177,14 @@ type Payment {
   tokenSymbol: String!
   nexusAttestationId: String
   nexusVerified: Boolean!
+  executedAt: BigInt!
+  expectedAt: BigInt
+  intentSignedAt: BigInt
+  latencySeconds: Int
+  usdValue: BigInt
+  tokenDecimals: Int
+  relayerPerformanceId: String
+  merchantPerformanceId: String
 }
 
 type Subscription {
@@ -198,6 +206,26 @@ type Subscription {
   paymentsExecuted: BigInt!
   totalAmountPaid: BigInt!
   createdAtBlock: BigInt!
+  intentSignedAt: BigInt
+  performanceScore: Float
+}
+
+type Intent {
+  id: ID!
+  subscriptionId: String!
+  merchant: String!
+  subscriber: String!
+  token: String!
+  amount: BigInt!
+  interval: BigInt!
+  maxPayments: BigInt!
+  maxTotalAmount: BigInt!
+  expiry: BigInt!
+  status: String!
+  createdAt: BigInt!
+  createdAtBlock: BigInt!
+  signature: String
+  performanceScore: Float
 }
 
 type CrossChainAttestation {
@@ -210,4 +238,60 @@ type CrossChainAttestation {
   amount: BigInt
   verified: Boolean!
   timestamp: BigInt!
+}
+
+type MerchantPerformance {
+  id: ID!
+  merchant: String!
+  totalRevenue: BigInt!
+  totalPayments: BigInt!
+  successfulPayments: BigInt!
+  failedPayments: BigInt!
+  latencyTotalSeconds: BigInt!
+  latencySamples: BigInt!
+  averageLatencySeconds: Float
+  averagePaymentValue: BigInt
+  activeSubscriptions: BigInt!
+  totalSubscriptions: BigInt!
+  performanceScore: Float
+  lastPaymentAt: BigInt
+  updatedAt: BigInt!
+}
+
+type SubscriberStats {
+  id: ID!
+  subscriber: String!
+  merchant: String!
+  totalPaid: BigInt!
+  payments: BigInt!
+  activeSubscriptions: BigInt!
+  lastPaymentAt: BigInt
+  performanceScore: Float
+  updatedAt: BigInt!
+}
+
+type RelayerPerformance {
+  id: ID!
+  relayer: String!
+  chainId: BigInt!
+  executions: BigInt!
+  successfulExecutions: BigInt!
+  failedExecutions: BigInt!
+  totalFees: BigInt!
+  latencyTotalSeconds: BigInt!
+  latencySamples: BigInt!
+  averageLatencySeconds: Float
+  performanceScore: Float
+  updatedAt: BigInt!
+}
+
+type IndexerMeta {
+  id: ID!
+  chainId: BigInt!
+  latestIndexedBlock: BigInt!
+  latestIndexedTimestamp: BigInt!
+  indexingLatencyMs: BigInt
+  lastSyncTimestamp: BigInt!
+  envioVersion: String
+  performanceScore: Float
 }

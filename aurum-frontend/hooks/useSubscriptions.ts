@@ -2,6 +2,8 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ApiError, NetworkError } from "@/lib/errors";
+import { delay } from "@/lib/utils";
 
 const API_BASE = process.env.NEXT_PUBLIC_RELAYER_API_URL;
 
@@ -66,8 +68,10 @@ type MerchantTransactionsResponse = {
   count: number;
   totalRevenue: string;
   tokenTotals: Record<string, string>;
+  envioExplorerUrl: string;
   page: number;
-  size: number;
+  hasMore: boolean;
+  dataSource: string;
 };
 
 type SubscriptionHistoryItem = {
@@ -82,13 +86,46 @@ async function fetchJson<T>(path: string): Promise<T> {
     throw new Error("Relayer API URL not configured");
   }
 
-  const response = await fetch(`${API_BASE}${path}`);
+  const url = `${API_BASE}${path}`;
+  const delays = [1_000, 3_000, 10_000];
 
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.statusText}`);
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        const message = await safeParseMessage(response);
+        throw new ApiError(message, response.status);
+      }
+
+      return (await response.json()) as T;
+    } catch (error) {
+      lastError = error;
+      const isNetwork =
+        error instanceof TypeError ||
+        (error instanceof NetworkError) ||
+        (error as { message?: string }).message === "Failed to fetch";
+
+      if (attempt === delays.length || (!isNetwork && !(error instanceof ApiError))) {
+        throw error;
+      }
+      await delay(delays[attempt]);
+    }
   }
 
-  return (await response.json()) as T;
+  throw lastError ?? new NetworkError("Unknown network error");
+}
+
+async function safeParseMessage(response: Response) {
+  try {
+    const payload = await response.json();
+    if (payload?.error) return `API error: ${payload.error}`;
+    if (payload?.message) return `API error: ${payload.message}`;
+  } catch {
+    // ignore
+  }
+  return `API request failed with status ${response.status}`;
 }
 
 export const subscriptionKeys = {
@@ -121,10 +158,18 @@ export function useMerchantTransactions(
   address: Nullable<string>,
   { page = 0, size = 25, useHypersync = false, chain }: MerchantTransactionParams = {},
 ) {
+  const queryKey = [
+    "merchant",
+    address ?? "",
+    "transactions",
+    page,
+    size,
+    useHypersync,
+    chain ?? "",
+  ] as const;
+
   return useQuery({
-    queryKey: address
-      ? subscriptionKeys.merchantTransactions(address, page, size)
-      : subscriptionKeys.merchantTransactions("", page, size),
+    queryKey,
     queryFn: () =>
       fetchJson<MerchantTransactionsResponse>(
         `/api/v1/merchant/${address}/transactions?page=${page}&size=${size}&use_hypersync=${useHypersync}${

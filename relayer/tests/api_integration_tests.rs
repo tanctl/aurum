@@ -38,8 +38,6 @@ async fn create_test_app_state() -> Arc<AppState> {
         relayer_address: "0x1234567890123456789012345678901234567890".to_string(),
         avail_rpc_url: Some("stub".to_string()),
         avail_application_id: None,
-        avail_auth_token: None,
-        avail_secret_uri: None,
         envio_graphql_endpoint: None,
         envio_explorer_url: None,
         hypersync_url_sepolia: None,

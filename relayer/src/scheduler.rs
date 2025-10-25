@@ -131,38 +131,41 @@ impl Scheduler {
             pool,
         };
 
-        scheduler.run_initial_historical_sync().await;
+        scheduler.launch_initial_historical_sync();
         scheduler.setup_payment_job().await?;
 
         info!("payment scheduler initialized successfully");
         Ok(scheduler)
     }
 
-    async fn run_initial_historical_sync(&self) {
+    fn launch_initial_historical_sync(&self) {
         if let Some(hypersync) = &self.hypersync_client {
-            info!("Syncing historical data via HyperSync...");
-            let start = Instant::now();
+            info!("starting background HyperSync historical sync task");
+            let hypersync = Arc::clone(hypersync);
+            let config = self.config.clone();
+            let queries = Arc::clone(&self.queries);
+            let blockchain_client = Arc::clone(&self.blockchain_client);
+            let metrics = Arc::clone(&self.metrics);
 
-            match hypersync
-                .sync_historical_data(
-                    &self.config,
-                    Arc::clone(&self.queries),
-                    Arc::clone(&self.blockchain_client),
-                )
-                .await
-            {
-                Ok(_) => {
-                    let elapsed = start.elapsed();
-                    self.metrics.record_hypersync_query(elapsed);
-                    info!(
-                        "Historical sync complete in {} ms (records may have been updated)",
-                        elapsed.as_millis()
-                    );
+            tokio::spawn(async move {
+                let start = Instant::now();
+                match hypersync
+                    .sync_historical_data(&config, queries, blockchain_client)
+                    .await
+                {
+                    Ok(_) => {
+                        let elapsed = start.elapsed();
+                        metrics.record_hypersync_query(elapsed);
+                        info!(
+                            "background HyperSync historical sync complete in {} ms",
+                            elapsed.as_millis()
+                        );
+                    }
+                    Err(err) => {
+                        error!("background HyperSync historical sync failed: {}", err);
+                    }
                 }
-                Err(err) => {
-                    error!("HyperSync historical sync failed: {}", err);
-                }
-            }
+            });
         } else {
             info!("HyperSync client not configured; skipping historical sync");
         }
@@ -1521,8 +1524,6 @@ mod tests {
             envio_explorer_url: None,
             avail_rpc_url: None,
             avail_application_id: None,
-            avail_auth_token: None,
-            avail_secret_uri: None,
             hypersync_url_sepolia: None,
             hypersync_url_base: None,
         };
