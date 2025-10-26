@@ -1,5 +1,6 @@
 use crate::api::types::SubscriptionIntent;
 use crate::error::{RelayerError, Result};
+use crate::utils::tokens;
 use ethers::abi::{encode, Token};
 use ethers::core::utils::keccak256;
 use ethers::types::{Address, Signature, U256};
@@ -160,6 +161,7 @@ impl ValidationService {
         amount: &str,
         max_payments: u64,
         max_total_amount: &str,
+        token_address: &str,
     ) -> Result<()> {
         let amount_u256 = Self::validate_amount(amount)?;
         let max_total_u256 = Self::validate_amount(max_total_amount)?;
@@ -186,11 +188,18 @@ impl ValidationService {
             ));
         }
 
-        let min_payment = U256::from(1_000_000_000_000_000u64);
+        let min_payment = if tokens::is_eth(token_address) {
+            U256::from(1_000_000_000_000_000u64)
+        } else {
+            U256::from(1)
+        };
         if amount_u256 < min_payment {
-            return Err(RelayerError::Validation(
-                "payment amount too small to cover gas and protocol fees".to_string(),
-            ));
+            let message = if tokens::is_eth(token_address) {
+                "payment amount too small to cover gas and protocol fees"
+            } else {
+                "payment amount must be at least one base unit for the selected token"
+            };
+            return Err(RelayerError::Validation(message.to_string()));
         }
 
         Ok(())

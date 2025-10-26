@@ -58,12 +58,6 @@ pub async fn submit_intent_handler(
         request.intent.interval,
     )?;
 
-    ValidationService::validate_payment_parameters(
-        &request.intent.amount,
-        request.intent.max_payments,
-        &request.intent.max_total_amount,
-    )?;
-
     let supported_tokens = app_state
         .config
         .supported_tokens_for_chain(chain)
@@ -82,6 +76,12 @@ pub async fn submit_intent_handler(
         "validated subscription token {} ({})",
         token_symbol, token_address
     );
+    ValidationService::validate_payment_parameters(
+        &request.intent.amount,
+        request.intent.max_payments,
+        &request.intent.max_total_amount,
+        &token_address,
+    )?;
 
     let subscription_id =
         ValidationService::generate_subscription_id(&request.intent, &request.signature)?;
